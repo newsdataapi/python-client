@@ -17,6 +17,8 @@ COUNT_ENDPOINT = 'count'
 
 CRYPTO_COUNT_ENDPOINT = 'crypto/count'
 
+MARKET_COUNT_ENDPOINT = 'market/count'
+
 # News Market URL
 
 MARKET_ENDPOINT = 'market'
