@@ -25,7 +25,8 @@ class NewsDataApiClient(FileHandler):
             max_pages: Optional[int] = 10**10,
             debug: Optional[bool] = False,
             folder_path: Optional[str] = None, 
-            include_headers: Optional[bool] = False
+            include_headers: Optional[bool] = False,
+            accept_language: Optional[str] = 'en',
         ) -> None:
         """Initializes newsdata client object for access Newsdata APIs."""
         self.apikey = apikey
@@ -39,6 +40,7 @@ class NewsDataApiClient(FileHandler):
         self.request_timeout = request_timeout
         # self.is_debug = debug
         self.include_headers = include_headers
+        self.accept_language = accept_language
         self.set_base_url()
         super().__init__(folder_path=folder_path)
         logger.info("NewsDataApiClient initialized successfully.")
@@ -137,9 +139,15 @@ class NewsDataApiClient(FileHandler):
                 params = query_params.copy()
                 params['apikey'] = self.apikey
                 url = f"{endpoint}?{urlencode(params, quote_via=quote)}"
+                headers = {'Accept-Language':self.accept_language}
 
                 logger.info(f"Fetching data from URL: {url}")
-                response = self.request_method.get(url=url, proxies=self.proxies, timeout=self.request_timeout)
+                response = self.request_method.get(
+                    url=url, 
+                    proxies=self.proxies, 
+                    timeout=self.request_timeout,
+                    headers=headers
+                )
                 logger.info(f"Time taken to fetch data: {time.perf_counter() - s_time:.2f} seconds")
 
                 X_API_Limit_Remaining = response.headers.get("X-API-Limit-Remaining")
