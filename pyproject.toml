@@ -1,0 +1,96 @@
+[project]
+name = "newsdataapi"
+description = "Official Python SDK for the NewsData.io REST API"
+dynamic = ["version"]
+readme = "README.md"
+license = { file = "LICENSE" }
+authors = [{ name = "NewsData.io", email = "contact@newsdata.io" }]
+requires-python = ">=3.8"
+
+dependencies = [
+    "requests>=2.25,<3",
+]
+
+keywords = ["news", "news-data", "newsdata", "api", "sdk"]
+
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Typing :: Typed",
+]
+
+[project.urls]
+Homepage = "https://newsdata.io"
+Documentation = "https://newsdata.io/documentation"
+Repository = "https://github.com/bytesview/python-client"
+Issues = "https://github.com/bytesview/python-client/issues"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+# Single source of truth for the version: __init__.py.
+[tool.hatch.version]
+path = "src/newsdataapi/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/newsdataapi"]
+
+# PEP 735 dependency groups (uv reads these natively).
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "pytest-cov>=5",
+    "responses>=0.25",
+    "ruff>=0.6",
+    "mypy>=1.10",
+    "types-requests",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "integration: live API tests requiring PYTEST_TOKEN env var",
+]
+# Skip integration tests by default; opt in with `pytest -m integration`
+# or `-m ""` to run everything.
+addopts = [
+    "-ra",
+    "--strict-markers",
+    "-m", "not integration",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py38"
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "B",    # flake8-bugbear
+    "UP",   # pyupgrade
+    "C4",   # flake8-comprehensions
+    "SIM",  # flake8-simplify
+    "RET",  # flake8-return
+    "PTH",  # flake8-use-pathlib
+]
+
+[tool.mypy]
+python_version = "3.9"
+strict = true
+files = ["src/newsdataapi"]
