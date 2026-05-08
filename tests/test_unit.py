@@ -54,6 +54,11 @@ def test_validate_string_param_accepts_list_of_strings() -> None:
     assert _validate_params({"country": ["us", "gb", "in"]}) == {"country": "us,gb,in"}
 
 
+def test_validate_id_accepts_list() -> None:
+    """id is a comma-list filter on the server (in comma_to_list_filter)."""
+    assert _validate_params({"id": ["a", "b", "c"]}) == {"id": "a,b,c"}
+
+
 def test_validate_string_param_rejects_non_string() -> None:
     with pytest.raises(NewsdataValidationError) as exc_info:
         _validate_params({"q": 123})
