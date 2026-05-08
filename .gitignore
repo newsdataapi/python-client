@@ -21,3 +21,6 @@ temp.py
 # Claude Code
 CLAUDE.md
 .claude/
+
+# IDE
+.vscode/

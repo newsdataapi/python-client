@@ -104,6 +104,8 @@ def _validate_params(user_params: Mapping[str, Any]) -> dict[str, Any]:
       ``domain``/``domainurl``/``excludedomain``) are enforced client-side;
       setting more than one from any group raises
       ``NewsdataValidationError`` before the request leaves.
+    * ``sentiment_score`` requires ``sentiment`` to be set; passing
+      ``sentiment_score`` alone raises ``NewsdataValidationError``.
 
     Raises:
         NewsdataValidationError: On any type mismatch, unknown raw_query
@@ -131,6 +133,15 @@ def _validate_params(user_params: Mapping[str, Any]) -> dict[str, Any]:
                 f"these parameters are mutually exclusive: {set_in_group}",
                 param=set_in_group[0],
             )
+
+    if (
+        user_params.get("sentiment_score") is not None
+        and user_params.get("sentiment") is None
+    ):
+        raise NewsdataValidationError(
+            "sentiment_score requires sentiment to be set",
+            param="sentiment_score",
+        )
 
     validated: dict[str, Any] = {}
     for param, value in user_params.items():
@@ -187,9 +198,9 @@ def _check_int_param(param: str, value: Any) -> None:
             f"{param!r} must be an int, got {type(value).__name__}",
             param=param,
         )
-    if param == "size" and value > 50:
+    if param == "size" and (value > 50 or value < 1):
         raise NewsdataValidationError(
-            f"size must be 50 or less (got {value})",
+            f"size must be between 1 and 50 (got {value})",
             param="size",
         )
 
@@ -242,7 +253,12 @@ def _parse_raw_query(raw_query: Any, *, allowed_keys: set[str]) -> dict[str, Any
                 f"Unknown parameter in raw_query: {key!r}",
                 param=key,
             )
-        result[normalized] = values[0] if values else ""
+        if not values or not values[0]:
+            raise NewsdataValidationError(
+                f"Parameter {key!r} must have a value",
+                param=key,
+            )
+        result[normalized] = values[0]
     return result
 
 

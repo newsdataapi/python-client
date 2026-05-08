@@ -113,6 +113,23 @@ def test_validate_size_well_above_cap_rejected() -> None:
         _validate_params({"size": 1000})
 
 
+def test_validate_size_at_min_accepted() -> None:
+    """size=1 (the minimum) is accepted."""
+    assert _validate_params({"size": 1}) == {"size": 1}
+
+
+def test_validate_size_below_min_rejected() -> None:
+    """size < 1 is rejected client-side."""
+    with pytest.raises(NewsdataValidationError) as exc_info:
+        _validate_params({"size": 0})
+    assert exc_info.value.param == "size"
+
+
+def test_validate_size_negative_rejected() -> None:
+    with pytest.raises(NewsdataValidationError):
+        _validate_params({"size": -5})
+
+
 @pytest.mark.parametrize(
     ("params", "first_conflict"),
     [
@@ -176,24 +193,49 @@ def test_validate_no_mutex_when_one_per_group_set() -> None:
 
 
 def test_validate_float_param_accepts_float() -> None:
-    assert _validate_params({"sentiment_score": 44.5}) == {"sentiment_score": 44.5}
+    out = _validate_params({"sentiment": "positive", "sentiment_score": 44.5})
+    assert out == {"sentiment": "positive", "sentiment_score": 44.5}
 
 
 def test_validate_float_param_accepts_int() -> None:
     """int is accepted alongside float — urlencode handles the conversion."""
-    assert _validate_params({"sentiment_score": 50}) == {"sentiment_score": 50}
+    out = _validate_params({"sentiment": "positive", "sentiment_score": 50})
+    assert out == {"sentiment": "positive", "sentiment_score": 50}
 
 
 def test_validate_float_param_rejects_bool() -> None:
     """``bool`` is an ``int`` subclass — must still be rejected for sentiment_score."""
     with pytest.raises(NewsdataValidationError) as exc_info:
-        _validate_params({"sentiment_score": True})
+        _validate_params({"sentiment": "positive", "sentiment_score": True})
     assert exc_info.value.param == "sentiment_score"
+    assert "must be a number" in str(exc_info.value)
 
 
 def test_validate_float_param_rejects_str() -> None:
-    with pytest.raises(NewsdataValidationError):
-        _validate_params({"sentiment_score": "44.5"})
+    with pytest.raises(NewsdataValidationError) as exc_info:
+        _validate_params({"sentiment": "positive", "sentiment_score": "44.5"})
+    assert exc_info.value.param == "sentiment_score"
+    assert "must be a number" in str(exc_info.value)
+
+
+def test_sentiment_score_requires_sentiment() -> None:
+    """sentiment_score alone (without sentiment) is rejected."""
+    with pytest.raises(NewsdataValidationError) as exc_info:
+        _validate_params({"sentiment_score": 44.5})
+    assert exc_info.value.param == "sentiment_score"
+    assert "sentiment" in str(exc_info.value).lower()
+
+
+def test_sentiment_score_with_sentiment_passes() -> None:
+    """sentiment_score paired with sentiment passes through."""
+    out = _validate_params({"sentiment": "positive", "sentiment_score": 44.5})
+    assert out == {"sentiment": "positive", "sentiment_score": 44.5}
+
+
+def test_sentiment_alone_passes() -> None:
+    """sentiment without sentiment_score is allowed (regression)."""
+    out = _validate_params({"sentiment": "positive"})
+    assert out == {"sentiment": "positive"}
 
 
 def test_validate_unknown_param_passes_through() -> None:
@@ -310,6 +352,20 @@ def test_raw_query_apikey_case_insensitive_drop() -> None:
         allowed_keys={"q", "raw_query"},
     )
     assert out == {"q": "news"}
+
+
+def test_raw_query_rejects_key_with_empty_value() -> None:
+    """A key with an empty value (e.g., q=) is rejected."""
+    with pytest.raises(NewsdataValidationError) as exc_info:
+        _parse_raw_query("q=", allowed_keys={"q", "raw_query"})
+    assert exc_info.value.param == "q"
+
+
+def test_raw_query_rejects_key_with_no_value() -> None:
+    """A bare key with no '=' (e.g., q&country=us) is rejected."""
+    with pytest.raises(NewsdataValidationError) as exc_info:
+        _parse_raw_query("q&country=us", allowed_keys={"q", "country", "raw_query"})
+    assert exc_info.value.param == "q"
 
 
 # ===========================================================================

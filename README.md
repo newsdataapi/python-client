@@ -58,8 +58,8 @@ finally:
 | Method | Endpoint | Notes |
 |--------|----------|-------|
 | `latest_api()` | `/latest` | Real-time news |
-| `archive_api()` | `/archive` | Historical news (pass a date range) |
-| `sources_api()` | `/sources` | Available news sources (single page) |
+| `archive_api()` | `/archive` | Historical news |
+| `sources_api()` | `/sources` | Available news sources |
 | `crypto_api()` | `/crypto` | Cryptocurrency news |
 | `market_api()` | `/market` | Market / financial news |
 | `count_api(from_date, to_date)` | `/count` | Aggregate counts |
