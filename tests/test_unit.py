@@ -96,6 +96,106 @@ def test_validate_int_param_rejects_str() -> None:
         _validate_params({"size": "10"})
 
 
+def test_validate_size_at_cap_accepted() -> None:
+    """size=50 (the paid-plan cap) is accepted."""
+    assert _validate_params({"size": 50}) == {"size": 50}
+
+
+def test_validate_size_above_cap_rejected() -> None:
+    """size > 50 is rejected client-side."""
+    with pytest.raises(NewsdataValidationError) as exc_info:
+        _validate_params({"size": 51})
+    assert exc_info.value.param == "size"
+
+
+def test_validate_size_well_above_cap_rejected() -> None:
+    with pytest.raises(NewsdataValidationError):
+        _validate_params({"size": 1000})
+
+
+@pytest.mark.parametrize(
+    ("params", "first_conflict"),
+    [
+        # q-variants 3-way mutex
+        ({"q": "news", "qInTitle": "bar"}, "q"),
+        ({"q": "news", "qInMeta": "bar"}, "q"),
+        ({"qInTitle": "foo", "qInMeta": "bar"}, "qInTitle"),
+        ({"q": "news", "qInTitle": "bar", "qInMeta": "baz"}, "q"),
+        # Include/exclude pairs
+        ({"country": "us", "excludecountry": "gb"}, "country"),
+        ({"category": "business", "excludecategory": "sports"}, "category"),
+        ({"language": "en", "excludelanguage": "fr"}, "language"),
+        # Domain 3-way mutex (any two of domain/domainurl/excludedomain)
+        ({"domain": "cnn.com", "domainurl": "https://bbc.com"}, "domain"),
+        ({"domain": "cnn.com", "excludedomain": "fox.com"}, "domain"),
+        (
+            {"domainurl": "https://bbc.com", "excludedomain": "fox.com"},
+            "domainurl",
+        ),
+        (
+            {
+                "domain": "cnn.com",
+                "domainurl": "https://bbc.com",
+                "excludedomain": "fox.com",
+            },
+            "domain",
+        ),
+    ],
+)
+def test_validate_mutex_groups_raise(
+    params: dict[str, str],
+    first_conflict: str,
+) -> None:
+    """Server-rejected mutex combinations are caught client-side."""
+    with pytest.raises(NewsdataValidationError) as exc_info:
+        _validate_params(params)
+    assert "mutually exclusive" in str(exc_info.value)
+    assert exc_info.value.param == first_conflict
+
+
+def test_validate_no_mutex_when_one_per_group_set() -> None:
+    """One member from each mutex group plus other params is fine."""
+    out = _validate_params(
+        {
+            "q": "news",
+            "country": "us",
+            "category": "business",
+            "language": "en",
+            "domain": "cnn.com",
+            "tag": "tech",
+        }
+    )
+    assert out == {
+        "q": "news",
+        "country": "us",
+        "category": "business",
+        "language": "en",
+        "domain": "cnn.com",
+        "tag": "tech",
+    }
+
+
+def test_validate_float_param_accepts_float() -> None:
+    assert _validate_params({"sentiment_score": 44.5}) == {"sentiment_score": 44.5}
+
+
+def test_validate_float_param_accepts_int() -> None:
+    """int is accepted alongside float — urlencode handles the conversion."""
+    assert _validate_params({"sentiment_score": 50}) == {"sentiment_score": 50}
+
+
+def test_validate_float_param_rejects_bool() -> None:
+    """``bool`` is an ``int`` subclass — must still be rejected for sentiment_score."""
+    with pytest.raises(NewsdataValidationError) as exc_info:
+        _validate_params({"sentiment_score": True})
+    assert exc_info.value.param == "sentiment_score"
+
+
+def test_validate_float_param_rejects_str() -> None:
+    with pytest.raises(NewsdataValidationError):
+        _validate_params({"sentiment_score": "44.5"})
+
+
 def test_validate_unknown_param_passes_through() -> None:
     """Endpoint methods restrict which kwargs reach validation, so we
     deliberately don't reject unclassified params here."""
@@ -850,6 +950,122 @@ def test_scroll_stops_when_no_next_page(
     result = client.latest_api(q="x", scroll=True)
     assert isinstance(result, dict)
     assert len(result["results"]) == 1
+
+
+def test_scroll_count_merges_bucket_pages(
+    client: NewsDataApiClient,
+    mocked_responses: responses.RequestsMock,
+    no_sleep: None,
+) -> None:
+    """Count scroll concatenates per-bucket rows and captures the final aggregate."""
+    count_url = "https://newsdata.io/api/1/count"
+    mocked_responses.get(
+        count_url,
+        json={
+            "status": "success",
+            "results": [{"dateTime": "2026-01-01", "count": 100}],
+            "nextPage": "p2",
+        },
+        status=200,
+    )
+    mocked_responses.get(
+        count_url,
+        json={
+            "status": "success",
+            "results": [{"dateTime": "2025-12-31", "count": 200}],
+            "nextPage": "p3",
+        },
+        status=200,
+    )
+    mocked_responses.get(
+        count_url,
+        json={
+            "status": "success",
+            "results": {"count": 300},
+            "nextPage": None,
+        },
+        status=200,
+    )
+    result = client.count_api(
+        from_date="2025-01-01 00:00:00",
+        to_date="2026-01-01 00:00:00",
+        scroll=True,
+    )
+    assert isinstance(result, dict)
+    assert result["results"] == [
+        {"dateTime": "2026-01-01", "count": 100},
+        {"dateTime": "2025-12-31", "count": 200},
+    ]
+    assert result["aggregate"] == {"count": 300}
+    assert result["nextPage"] is None
+
+
+def test_scroll_count_truncates_to_max_result(
+    client: NewsDataApiClient,
+    mocked_responses: responses.RequestsMock,
+    no_sleep: None,
+) -> None:
+    """max_result on count scroll caps the buckets list."""
+    count_url = "https://newsdata.io/api/1/count"
+    mocked_responses.get(
+        count_url,
+        json={
+            "status": "success",
+            "results": [{"d": "1"}, {"d": "2"}, {"d": "3"}],
+            "nextPage": "p2",
+        },
+        status=200,
+    )
+    result = client.count_api(
+        from_date="2025-01-01 00:00:00",
+        to_date="2026-01-01 00:00:00",
+        scroll=True,
+        max_result=2,
+    )
+    assert isinstance(result, dict)
+    assert len(result["results"]) == 2
+    assert result["nextPage"] is None
+
+
+def test_scroll_count_single_aggregate_response(
+    client: NewsDataApiClient,
+    mocked_responses: responses.RequestsMock,
+    no_sleep: None,
+) -> None:
+    """Count scroll on a no-buckets response captures the aggregate and stops."""
+    mocked_responses.get(
+        "https://newsdata.io/api/1/count",
+        json={
+            "status": "success",
+            "results": {"count": 9999},
+            "nextPage": None,
+        },
+        status=200,
+    )
+    result = client.count_api(
+        from_date="2025-01-01 00:00:00",
+        to_date="2026-01-01 00:00:00",
+        scroll=True,
+    )
+    assert isinstance(result, dict)
+    assert result["results"] == []
+    assert result["aggregate"] == {"count": 9999}
+
+
+def test_scroll_news_does_not_add_aggregate_field(
+    client: NewsDataApiClient,
+    mocked_responses: responses.RequestsMock,
+    no_sleep: None,
+) -> None:
+    """News-endpoint scroll merges as before — no aggregate key added."""
+    mocked_responses.get(
+        LATEST_URL,
+        json={"status": "success", "results": [{"id": "1"}], "nextPage": None},
+        status=200,
+    )
+    result = client.latest_api(scroll=True)
+    assert isinstance(result, dict)
+    assert "aggregate" not in result
 
 
 # ===========================================================================

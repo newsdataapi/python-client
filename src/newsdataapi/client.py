@@ -35,6 +35,7 @@ logger = logging.getLogger(__name__)
 
 _BOOL_PARAMS = frozenset({"full_content", "image", "video", "removeduplicate"})
 _INT_PARAMS = frozenset({"size"})
+_FLOAT_PARAMS = frozenset({"sentiment_score"})
 _STRING_PARAMS = frozenset(
     {
         "q",
@@ -66,7 +67,21 @@ _STRING_PARAMS = frozenset(
         "excludecountry",
         "page",
         "interval",
+        "creator",
+        "datatype",
     }
+)
+
+# Filter pairs / groups that the server rejects with HTTP 422 when more than
+# one is set. Mirrored on the client to fail fast and avoid a wasted round
+# trip. Order within each tuple defines which name shows up as
+# ``NewsdataValidationError.param`` when the conflict is detected.
+_MUTEX_GROUPS: tuple[tuple[str, ...], ...] = (
+    ("q", "qInTitle", "qInMeta"),
+    ("country", "excludecountry"),
+    ("category", "excludecategory"),
+    ("language", "excludelanguage"),
+    ("domain", "domainurl", "excludedomain"),
 )
 
 
@@ -83,10 +98,17 @@ def _validate_params(user_params: Mapping[str, Any]) -> dict[str, Any]:
       passing any other non-None param alongside ``raw_query`` raises
       ``NewsdataValidationError``. When set alone, the query string is
       parsed and validated against the calling method's keyset.
+    * Server-side mutex groups (``q``/``qInTitle``/``qInMeta``,
+      ``country``/``excludecountry``, ``category``/``excludecategory``,
+      ``language``/``excludelanguage``, and
+      ``domain``/``domainurl``/``excludedomain``) are enforced client-side;
+      setting more than one from any group raises
+      ``NewsdataValidationError`` before the request leaves.
 
     Raises:
         NewsdataValidationError: On any type mismatch, unknown raw_query
-            parameter, or raw_query combined with other endpoint params.
+            parameter, raw_query combined with other endpoint params, or
+            mutually-exclusive params set together.
     """
     raw_query = user_params.get("raw_query")
     if raw_query is not None:
@@ -102,6 +124,14 @@ def _validate_params(user_params: Mapping[str, Any]) -> dict[str, Any]:
             )
         return _parse_raw_query(raw_query, allowed_keys=set(user_params.keys()))
 
+    for group in _MUTEX_GROUPS:
+        set_in_group = [k for k in group if user_params.get(k) is not None]
+        if len(set_in_group) > 1:
+            raise NewsdataValidationError(
+                f"these parameters are mutually exclusive: {set_in_group}",
+                param=set_in_group[0],
+            )
+
     validated: dict[str, Any] = {}
     for param, value in user_params.items():
         if value is None or param == "raw_query":
@@ -113,6 +143,8 @@ def _validate_params(user_params: Mapping[str, Any]) -> dict[str, Any]:
             value = _coerce_bool_param(param, value)
         elif param in _INT_PARAMS:
             _check_int_param(param, value)
+        elif param in _FLOAT_PARAMS:
+            _check_float_param(param, value)
         # else: unknown param — pass through unmodified. Endpoint methods
         # restrict kwargs at the signature level.
 
@@ -153,6 +185,21 @@ def _check_int_param(param: str, value: Any) -> None:
     if isinstance(value, bool) or not isinstance(value, int):
         raise NewsdataValidationError(
             f"{param!r} must be an int, got {type(value).__name__}",
+            param=param,
+        )
+    if param == "size" and value > 50:
+        raise NewsdataValidationError(
+            f"size must be 50 or less (got {value})",
+            param="size",
+        )
+
+
+def _check_float_param(param: str, value: Any) -> None:
+    # Accept both int and float. ``bool`` is a subclass of ``int`` and
+    # would otherwise be silently accepted; reject it explicitly.
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise NewsdataValidationError(
+            f"{param!r} must be a number (int or float), got {type(value).__name__}",
             param=param,
         )
 
@@ -421,6 +468,9 @@ class NewsDataApiClient:
         organization: str | list[str] | None = None,
         url: str | None = None,
         sort: str | None = None,
+        creator: str | list[str] | None = None,
+        datatype: str | list[str] | None = None,
+        sentiment_score: float | None = None,
         raw_query: str | None = None,
         scroll: bool = False,
         paginate: bool = False,
@@ -466,6 +516,9 @@ class NewsDataApiClient:
                 "organization": organization,
                 "url": url,
                 "sort": sort,
+                "creator": creator,
+                "datatype": datatype,
+                "sentiment_score": sentiment_score,
                 "raw_query": raw_query,
             },
             scroll=scroll,
@@ -502,6 +555,14 @@ class NewsDataApiClient:
         id: str | None = None,
         url: str | None = None,
         sort: str | None = None,
+        tag: str | list[str] | None = None,
+        sentiment: str | None = None,
+        sentiment_score: float | None = None,
+        region: str | list[str] | None = None,
+        organization: str | list[str] | None = None,
+        creator: str | list[str] | None = None,
+        datatype: str | list[str] | None = None,
+        removeduplicate: bool | None = None,
         raw_query: str | None = None,
         scroll: bool = False,
         paginate: bool = False,
@@ -540,6 +601,14 @@ class NewsDataApiClient:
                 "id": id,
                 "url": url,
                 "sort": sort,
+                "tag": tag,
+                "sentiment": sentiment,
+                "sentiment_score": sentiment_score,
+                "region": region,
+                "organization": organization,
+                "creator": creator,
+                "datatype": datatype,
+                "removeduplicate": removeduplicate,
                 "raw_query": raw_query,
             },
             scroll=scroll,
@@ -683,6 +752,9 @@ class NewsDataApiClient:
         id: str | None = None,
         url: str | None = None,
         sort: str | None = None,
+        creator: str | list[str] | None = None,
+        datatype: str | list[str] | None = None,
+        sentiment_score: float | None = None,
         raw_query: str | None = None,
         scroll: bool = False,
         paginate: bool = False,
@@ -725,6 +797,9 @@ class NewsDataApiClient:
                 "id": id,
                 "url": url,
                 "sort": sort,
+                "creator": creator,
+                "datatype": datatype,
+                "sentiment_score": sentiment_score,
                 "raw_query": raw_query,
             },
             scroll=scroll,
@@ -758,14 +833,27 @@ class NewsDataApiClient:
         size: int | None = None,
         sort: str | None = None,
         interval: str | None = None,
+        tag: str | list[str] | None = None,
+        sentiment: str | None = None,
+        sentiment_score: float | None = None,
+        region: str | list[str] | None = None,
+        organization: str | list[str] | None = None,
+        creator: str | list[str] | None = None,
+        datatype: str | list[str] | None = None,
+        removeduplicate: bool | None = None,
         raw_query: str | None = None,
+        scroll: bool = False,
         paginate: bool = False,
+        max_result: int | None = None,
         max_pages: int | None = None,
     ) -> dict[str, Any] | Iterator[dict[str, Any]]:
         """Fetch aggregate counts of news for a date range.
 
-        ``from_date`` and ``to_date`` are required. The count endpoints do
-        not support ``scroll``; pass ``paginate=True`` to iterate intervals.
+        ``from_date`` and ``to_date`` are required. Returns a dict by
+        default, the merged dict if ``scroll=True`` (concatenates per-bucket
+        rows from every page; the final aggregate dict, if any, is captured
+        under the ``aggregate`` key of the merged response), or an iterator
+        of per-page dicts if ``paginate=True``.
         """
         return self._dispatch(
             constants.COUNT_ENDPOINT,
@@ -792,9 +880,19 @@ class NewsDataApiClient:
                 "size": size,
                 "sort": sort,
                 "interval": interval,
+                "tag": tag,
+                "sentiment": sentiment,
+                "sentiment_score": sentiment_score,
+                "region": region,
+                "organization": organization,
+                "creator": creator,
+                "datatype": datatype,
+                "removeduplicate": removeduplicate,
                 "raw_query": raw_query,
             },
+            scroll=scroll,
             paginate=paginate,
+            max_result=max_result,
             max_pages=max_pages,
             is_count=True,
         )
@@ -825,10 +923,18 @@ class NewsDataApiClient:
         interval: str | None = None,
         removeduplicate: bool | None = None,
         raw_query: str | None = None,
+        scroll: bool = False,
         paginate: bool = False,
+        max_result: int | None = None,
         max_pages: int | None = None,
     ) -> dict[str, Any] | Iterator[dict[str, Any]]:
-        """Fetch aggregate counts of crypto news for a date range."""
+        """Fetch aggregate counts of crypto news for a date range.
+
+        ``from_date`` and ``to_date`` are required. Returns a dict by
+        default, the merged dict if ``scroll=True`` (final aggregate dict,
+        if any, captured under ``aggregate`` key), or an iterator of
+        per-page dicts if ``paginate=True``.
+        """
         return self._dispatch(
             constants.CRYPTO_COUNT_ENDPOINT,
             {
@@ -856,7 +962,9 @@ class NewsDataApiClient:
                 "removeduplicate": removeduplicate,
                 "raw_query": raw_query,
             },
+            scroll=scroll,
             paginate=paginate,
+            max_result=max_result,
             max_pages=max_pages,
             is_count=True,
         )
@@ -889,11 +997,22 @@ class NewsDataApiClient:
         sort: str | None = None,
         tag: str | list[str] | None = None,
         interval: str | None = None,
+        creator: str | list[str] | None = None,
+        datatype: str | list[str] | None = None,
+        sentiment_score: float | None = None,
         raw_query: str | None = None,
+        scroll: bool = False,
         paginate: bool = False,
+        max_result: int | None = None,
         max_pages: int | None = None,
     ) -> dict[str, Any] | Iterator[dict[str, Any]]:
-        """Fetch aggregate counts of market news for a date range."""
+        """Fetch aggregate counts of market news for a date range.
+
+        ``from_date`` and ``to_date`` are required. Returns a dict by
+        default, the merged dict if ``scroll=True`` (final aggregate dict,
+        if any, captured under ``aggregate`` key), or an iterator of
+        per-page dicts if ``paginate=True``.
+        """
         return self._dispatch(
             constants.MARKET_COUNT_ENDPOINT,
             {
@@ -922,9 +1041,14 @@ class NewsDataApiClient:
                 "sort": sort,
                 "tag": tag,
                 "interval": interval,
+                "creator": creator,
+                "datatype": datatype,
+                "sentiment_score": sentiment_score,
                 "raw_query": raw_query,
             },
+            scroll=scroll,
             paginate=paginate,
+            max_result=max_result,
             max_pages=max_pages,
             is_count=True,
         )
@@ -966,11 +1090,12 @@ class NewsDataApiClient:
         max_pages: int | None = None,
         is_count: bool = False,
     ) -> dict[str, Any] | Iterator[dict[str, Any]]:
+        """Validate ``params`` and route to single / scroll / paginate execution."""
         if scroll and paginate:
             raise ValueError("scroll and paginate are mutually exclusive")
         validated = _validate_params(params)
         if scroll:
-            return self._scroll_all(endpoint, validated, max_result)
+            return self._scroll_all(endpoint, validated, max_result, is_count=is_count)
         if paginate:
             return self._paginate(endpoint, validated, max_pages, is_count=is_count)
         return self._request(endpoint, validated)
@@ -1122,8 +1247,17 @@ class NewsDataApiClient:
         endpoint: str,
         params: Mapping[str, Any],
         max_result: int | None,
+        *,
+        is_count: bool = False,
     ) -> dict[str, Any]:
-        """Follow ``nextPage`` cursors and return one merged response."""
+        """Follow ``nextPage`` cursors and return one merged response.
+
+        For news endpoints, concatenates list-form ``results`` from every
+        page. For count endpoints (``is_count=True``), additionally captures
+        the final aggregate dict — when the API returns ``results`` as a
+        dict on the final page — under the ``aggregate`` key of the merged
+        response.
+        """
         if max_result is None:
             max_result = self.max_result
 
@@ -1132,6 +1266,7 @@ class NewsDataApiClient:
         total_results: Any = None
         last_headers: dict[str, str] | None = None
         next_page: Any = None
+        aggregate: dict[str, Any] | None = None
 
         while True:
             response = self._request(endpoint, request_params)
@@ -1139,6 +1274,8 @@ class NewsDataApiClient:
             page_results = response.get("results", [])
             if isinstance(page_results, list):
                 accumulated.extend(page_results)
+            elif is_count and isinstance(page_results, dict):
+                aggregate = page_results
             if self.include_headers:
                 last_headers = response.get("response_headers")
             next_page = response.get("nextPage")
@@ -1158,6 +1295,8 @@ class NewsDataApiClient:
             "results": accumulated,
             "nextPage": next_page,
         }
+        if aggregate is not None:
+            merged["aggregate"] = aggregate
         if last_headers is not None:
             merged["response_headers"] = last_headers
         return merged
