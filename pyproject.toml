@@ -1,6 +1,6 @@
 [project]
 name = "newsdataapi"
-description = "Official Python SDK for the NewsData.io REST API"
+description = "Official Python client (SDK) for the Newsdata.io News API — fetch real-time, historical, crypto, and stock-market news via REST, with validation, retries, pagination, and typed exceptions."
 dynamic = ["version"]
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -11,7 +11,20 @@ dependencies = [
     "requests>=2.25,<3",
 ]
 
-keywords = ["news", "news-data", "newsdata", "api", "sdk"]
+keywords = [
+    "news",
+    "newsdata",
+    "newsdata-io",
+    "news-api",
+    "rest-api",
+    "api-client",
+    "python-sdk",
+    "sdk",
+    "crypto-news",
+    "financial-news",
+    "market-news",
+    "news-aggregator",
+]
 
 classifiers = [
     "Development Status :: 4 - Beta",
