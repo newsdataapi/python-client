@@ -1,11 +1,11 @@
 <div align="center">
 
-[![NewsData.io logo](https://raw.githubusercontent.com/bytesview/python-client/main/newsdata-logo.png)](https://newsdata.io)
+[![NewsData.io logo](https://raw.githubusercontent.com/newsdataapi/python-client/main/newsdata-logo.png)](https://newsdata.io)
 
 # NewsData.io Python Client
 
-[![Build Status](https://img.shields.io/github/actions/workflow/status/bytesview/python-client/ci.yml)](https://github.com/bytesview/python-client/actions/workflows/ci.yml)
-[![License](https://img.shields.io/badge/license-MIT-blue)](https://github.com/bytesview/python-client/blob/main/LICENSE)
+[![Build Status](https://img.shields.io/github/actions/workflow/status/newsdataapi/python-client/ci.yml)](https://github.com/newsdataapi/python-client/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/license-MIT-blue)](https://github.com/newsdataapi/python-client/blob/main/LICENSE)
 [![PyPI](https://img.shields.io/pypi/v/newsdataapi?color=084298)](https://pypi.org/project/newsdataapi)
 [![PyPI - Downloads](https://img.shields.io/pypi/dm/newsdataapi)](https://pypi.org/project/newsdataapi)
 [![Supported Python versions](https://img.shields.io/pypi/pyversions/newsdataapi)](https://pypi.org/project/newsdataapi)
@@ -169,7 +169,7 @@ Defaults sleep about a minute total across all retries (2 s → 4 s → 8 s → 
 This project uses [uv](https://github.com/astral-sh/uv) for environment and lock management.
 
 ```bash
-git clone https://github.com/bytesview/python-client
+git clone https://github.com/newsdataapi/python-client
 cd python-client
 uv sync                                # creates .venv, installs runtime + dev deps from uv.lock
 ```
@@ -186,6 +186,21 @@ uv run mypy src/
 ```
 
 Dev dependencies live in PEP 735 `[dependency-groups].dev` (uv-native). Plain `pip install -e ".[dev]"` will not pick them up; if you can't use uv, install the contents of the `dev` group in `pyproject.toml` by hand.
+
+## Related libraries
+
+Official Newsdata.io clients across languages and runtimes:
+
+- **Node.js** — [newsdataapi/newsdata-nodejs-client](https://github.com/newsdataapi/newsdata-nodejs-client) (npm)
+- **React (hooks)** — [newsdataapi/newsdata-reactjs-client](https://github.com/newsdataapi/newsdata-reactjs-client) (npm)
+- **PHP** — [newsdataapi/php-client](https://github.com/newsdataapi/php-client) ([Packagist](https://packagist.org/packages/newsdataio/newsdataapi))
+- **Java** — [newsdataapi/newsdata-java-sdk](https://github.com/newsdataapi/newsdata-java-sdk) (Maven Central)
+- **.NET** — [newsdataapi/newsdata-dotnet-sdk](https://github.com/newsdataapi/newsdata-dotnet-sdk) ([NuGet](https://www.nuget.org/packages/Newsdata.Api/))
+- **Go** — [newsdataapi/newsdata-go-client](https://github.com/newsdataapi/newsdata-go-client) (Go modules)
+- **Dart / Flutter** — [newsdataapi/newsdata-flutter-client](https://github.com/newsdataapi/newsdata-flutter-client) (pub.dev)
+- **MCP Server (AI assistants)** — [newsdataapi/newsdata.io-mcp](https://github.com/newsdataapi/newsdata.io-mcp) ([PyPI](https://pypi.org/project/newsdata-mcp/))
+
+Also see [free news datasets](https://github.com/newsdataapi/newsdata.io-free-datasets) for ML / NLP work.
 
 ## License
 
