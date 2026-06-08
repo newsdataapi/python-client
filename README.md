@@ -9,6 +9,7 @@
 [![PyPI](https://img.shields.io/pypi/v/newsdataapi?color=084298)](https://pypi.org/project/newsdataapi)
 [![PyPI - Downloads](https://img.shields.io/pypi/dm/newsdataapi)](https://pypi.org/project/newsdataapi)
 [![Supported Python versions](https://img.shields.io/pypi/pyversions/newsdataapi)](https://pypi.org/project/newsdataapi)
+[![OpenAPI](https://img.shields.io/badge/OpenAPI-3.1-85EA2D)](https://newsdata.io/openapi.json)
 
 </div>
 
@@ -68,7 +69,7 @@ finally:
 
 All endpoint parameters are keyword-only (except the required `from_date` / `to_date` on the count endpoints). Most accept either a single string or a `list[str]`; lists are comma-joined for the API.
 
-See the [NewsData.io documentation](https://newsdata.io/documentation) for the full parameter reference.
+See the [NewsData.io documentation](https://newsdata.io/documentation) — or the [OpenAPI 3.1 spec](https://newsdata.io/openapi.json) — for the full parameter reference.
 
 ## Three ways to consume an endpoint
 
