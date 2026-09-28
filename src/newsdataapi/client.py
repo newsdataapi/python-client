@@ -47,6 +47,7 @@ _STRING_PARAMS = frozenset(
         "domain",
         "domainurl",
         "excludedomain",
+        "excludedomainurl",
         "timezone",
         "from_date",
         "to_date",
@@ -81,7 +82,7 @@ _MUTEX_GROUPS: tuple[tuple[str, ...], ...] = (
     ("country", "excludecountry"),
     ("category", "excludecategory"),
     ("language", "excludelanguage"),
-    ("domain", "domainurl", "excludedomain"),
+    ("domain", "domainurl", "excludedomain", "excludedomainurl"),
 )
 
 _QUOTA_EXHAUSTED_CODES = frozenset({"ApiKeyLimitExceeded", "ApiLimitExceeded"})
@@ -103,7 +104,8 @@ def _validate_params(user_params: Mapping[str, Any]) -> dict[str, Any]:
     * Server-side mutex groups (``q``/``qInTitle``/``qInMeta``,
       ``country``/``excludecountry``, ``category``/``excludecategory``,
       ``language``/``excludelanguage``, and
-      ``domain``/``domainurl``/``excludedomain``) are enforced client-side;
+      ``domain``/``domainurl``/``excludedomain``/``excludedomainurl``) are
+      enforced client-side;
       setting more than one from any group raises
       ``NewsdataValidationError`` before the request leaves.
     * ``sentiment_score`` requires ``sentiment`` to be set; passing
@@ -480,6 +482,7 @@ class NewsDataApiClient:
         domain: str | list[str] | None = None,
         domainurl: str | list[str] | None = None,
         excludedomain: str | list[str] | None = None,
+        excludedomainurl: str | list[str] | None = None,
         prioritydomain: str | None = None,
         timeframe: int | str | None = None,
         timezone: str | None = None,
@@ -528,6 +531,7 @@ class NewsDataApiClient:
                 "domain": domain,
                 "domainurl": domainurl,
                 "excludedomain": excludedomain,
+                "excludedomainurl": excludedomainurl,
                 "prioritydomain": prioritydomain,
                 "timeframe": str(timeframe) if timeframe is not None else None,
                 "timezone": timezone,
@@ -571,6 +575,7 @@ class NewsDataApiClient:
         domain: str | list[str] | None = None,
         domainurl: str | list[str] | None = None,
         excludedomain: str | list[str] | None = None,
+        excludedomainurl: str | list[str] | None = None,
         prioritydomain: str | None = None,
         timezone: str | None = None,
         size: int | None = None,
@@ -617,6 +622,7 @@ class NewsDataApiClient:
                 "domain": domain,
                 "domainurl": domainurl,
                 "excludedomain": excludedomain,
+                "excludedomainurl": excludedomainurl,
                 "prioritydomain": prioritydomain,
                 "timezone": timezone,
                 "size": size,
@@ -684,6 +690,7 @@ class NewsDataApiClient:
         domain: str | list[str] | None = None,
         domainurl: str | list[str] | None = None,
         excludedomain: str | list[str] | None = None,
+        excludedomainurl: str | list[str] | None = None,
         prioritydomain: str | None = None,
         timeframe: int | str | None = None,
         timezone: str | None = None,
@@ -723,6 +730,7 @@ class NewsDataApiClient:
                 "domain": domain,
                 "domainurl": domainurl,
                 "excludedomain": excludedomain,
+                "excludedomainurl": excludedomainurl,
                 "prioritydomain": prioritydomain,
                 "timeframe": str(timeframe) if timeframe is not None else None,
                 "timezone": timezone,
@@ -762,6 +770,7 @@ class NewsDataApiClient:
         domain: str | list[str] | None = None,
         domainurl: str | list[str] | None = None,
         excludedomain: str | list[str] | None = None,
+        excludedomainurl: str | list[str] | None = None,
         language: str | list[str] | None = None,
         excludelanguage: str | list[str] | None = None,
         prioritydomain: str | None = None,
@@ -807,6 +816,7 @@ class NewsDataApiClient:
                 "domain": domain,
                 "domainurl": domainurl,
                 "excludedomain": excludedomain,
+                "excludedomainurl": excludedomainurl,
                 "language": language,
                 "excludelanguage": excludelanguage,
                 "prioritydomain": prioritydomain,
@@ -854,6 +864,7 @@ class NewsDataApiClient:
         domain: str | list[str] | None = None,
         domainurl: str | list[str] | None = None,
         excludedomain: str | list[str] | None = None,
+        excludedomainurl: str | list[str] | None = None,
         full_content: bool | None = None,
         image: bool | None = None,
         video: bool | None = None,
@@ -901,6 +912,7 @@ class NewsDataApiClient:
                 "domain": domain,
                 "domainurl": domainurl,
                 "excludedomain": excludedomain,
+                "excludedomainurl": excludedomainurl,
                 "full_content": full_content,
                 "image": image,
                 "video": video,
@@ -940,6 +952,7 @@ class NewsDataApiClient:
         domain: str | list[str] | None = None,
         domainurl: str | list[str] | None = None,
         excludedomain: str | list[str] | None = None,
+        excludedomainurl: str | list[str] | None = None,
         full_content: bool | None = None,
         image: bool | None = None,
         video: bool | None = None,
@@ -978,6 +991,7 @@ class NewsDataApiClient:
                 "domain": domain,
                 "domainurl": domainurl,
                 "excludedomain": excludedomain,
+                "excludedomainurl": excludedomainurl,
                 "full_content": full_content,
                 "image": image,
                 "video": video,
@@ -1011,6 +1025,7 @@ class NewsDataApiClient:
         domain: str | list[str] | None = None,
         domainurl: str | list[str] | None = None,
         excludedomain: str | list[str] | None = None,
+        excludedomainurl: str | list[str] | None = None,
         language: str | list[str] | None = None,
         excludelanguage: str | list[str] | None = None,
         full_content: bool | None = None,
@@ -1055,6 +1070,7 @@ class NewsDataApiClient:
                 "domain": domain,
                 "domainurl": domainurl,
                 "excludedomain": excludedomain,
+                "excludedomainurl": excludedomainurl,
                 "language": language,
                 "excludelanguage": excludelanguage,
                 "full_content": full_content,
