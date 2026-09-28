@@ -148,12 +148,22 @@ def test_validate_size_negative_rejected() -> None:
         ({"country": "us", "excludecountry": "gb"}, "country"),
         ({"category": "business", "excludecategory": "sports"}, "category"),
         ({"language": "en", "excludelanguage": "fr"}, "language"),
-        # Domain 3-way mutex (any two of domain/domainurl/excludedomain)
+        # Domain 4-way mutex (any two of
+        # domain/domainurl/excludedomain/excludedomainurl)
         ({"domain": "cnn.com", "domainurl": "https://bbc.com"}, "domain"),
         ({"domain": "cnn.com", "excludedomain": "fox.com"}, "domain"),
         (
             {"domainurl": "https://bbc.com", "excludedomain": "fox.com"},
             "domainurl",
+        ),
+        ({"domain": "cnn.com", "excludedomainurl": "fox.com"}, "domain"),
+        (
+            {"domainurl": "https://bbc.com", "excludedomainurl": "fox.com"},
+            "domainurl",
+        ),
+        (
+            {"excludedomain": "cnn.com", "excludedomainurl": "fox.com"},
+            "excludedomain",
         ),
         (
             {
@@ -1285,6 +1295,51 @@ def test_count_endpoint_url_resolves(
     assert len(mocked_responses.calls) == 1
 
 
+@pytest.mark.parametrize(
+    ("method_name", "endpoint_path", "args"),
+    [
+        ("latest_api", "latest", ()),
+        ("archive_api", "archive", ()),
+        ("crypto_api", "crypto", ()),
+        ("market_api", "market", ()),
+        ("count_api", "count", ("2024-01-01", "2024-01-31")),
+        ("crypto_count_api", "crypto/count", ("2024-01-01", "2024-01-31")),
+        ("market_count_api", "market/count", ("2024-01-01", "2024-01-31")),
+    ],
+)
+def test_excludedomainurl_sent_as_csv(
+    client: NewsDataApiClient,
+    mocked_responses: responses.RequestsMock,
+    method_name: str,
+    endpoint_path: str,
+    args: tuple[str, ...],
+) -> None:
+    mocked_responses.get(
+        f"https://newsdata.io/api/1/{endpoint_path}",
+        json={"status": "success", "results": []},
+        status=200,
+    )
+    getattr(client, method_name)(*args, excludedomainurl=["bbc.com", "cnn.com"])
+    sent_url = mocked_responses.calls[0].request.url
+    assert sent_url is not None
+    assert "excludedomainurl=bbc.com%2Ccnn.com" in sent_url
+
+
+def test_raw_query_accepts_excludedomainurl(
+    client: NewsDataApiClient,
+    mocked_responses: responses.RequestsMock,
+) -> None:
+    mocked_responses.get(
+        LATEST_URL,
+        json={"status": "success", "results": []},
+        status=200,
+    )
+    client.latest_api(raw_query="excludedomainurl=bbc.com")
+    sent_url = mocked_responses.calls[0].request.url
+    assert sent_url is not None
+    assert "excludedomainurl=bbc.com" in sent_url
+
+
 # ===========================================================================
 # WebSocket query management (register / fetch / delete)
 # ===========================================================================
@@ -1365,6 +1420,23 @@ def test_websocket_register_raw_query_rejects_unknown_param(
     """size is valid on latest_api but not on websocket/register."""
     with pytest.raises(NewsdataValidationError):
         NewsDataApiWebSocket(client).websocket_register(raw_query="q=pizza&size=10")
+
+
+def test_websocket_register_sends_excludedomainurl(
+    client: NewsDataApiClient,
+    mocked_responses: responses.RequestsMock,
+) -> None:
+    mocked_responses.post(
+        WS_REGISTER_URL,
+        json={"status": "success", "results": {"registration_id": "abc"}},
+        status=200,
+    )
+    NewsDataApiWebSocket(client).websocket_register(
+        q="pizza", excludedomainurl=["bbc.com", "cnn.com"]
+    )
+    sent_url = mocked_responses.calls[0].request.url
+    assert sent_url is not None
+    assert "excludedomainurl=bbc.com%2Ccnn.com" in sent_url
 
 
 def test_websocket_register_duplicate_409(
