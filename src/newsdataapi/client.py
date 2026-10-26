@@ -18,6 +18,8 @@ from requests.exceptions import RequestException
 from . import constants, csv_export
 from .exceptions import (
     NewsdataAPIError,
+    NewsdataApiKeyLimitExceededError,
+    NewsdataApiLimitExceededError,
     NewsdataAuthError,
     NewsdataException,
     NewsdataNetworkError,
@@ -85,7 +87,10 @@ _MUTEX_GROUPS: tuple[tuple[str, ...], ...] = (
     ("domain", "domainurl", "excludedomain", "excludedomainurl"),
 )
 
-_QUOTA_EXHAUSTED_CODES = frozenset({"ApiKeyLimitExceeded", "ApiLimitExceeded"})
+_QUOTA_EXHAUSTED_ERRORS: dict[str, type[NewsdataRateLimitError]] = {
+    "ApiLimitExceeded": NewsdataApiLimitExceededError,
+    "ApiKeyLimitExceeded": NewsdataApiKeyLimitExceededError,
+}
 
 
 def _validate_params(user_params: Mapping[str, Any]) -> dict[str, Any]:
@@ -1190,13 +1195,19 @@ class NewsDataApiClient:
                 continue
 
             elapsed = time.perf_counter() - t0
-            logger.debug(
-                "%d %s (%.2fs) X-API-Limit-Remaining=%s",
+            apikey_limit_remaining = response.headers.get("X-APIKEY-Limit-Remaining")
+            log_msg = "%d %s (%.2fs) X-API-Limit-Remaining=%s"
+            log_args = [
                 response.status_code,
                 response.reason,
                 elapsed,
                 response.headers.get("X-API-Limit-Remaining"),
-            )
+            ]
+            if apikey_limit_remaining is not None:
+                # Only sent for API keys that have a credit cap set.
+                log_msg += " X-APIKEY-Limit-Remaining=%s"
+                log_args.append(apikey_limit_remaining)
+            logger.debug(log_msg, *log_args)
 
             try:
                 body: Any = response.json()
@@ -1230,11 +1241,10 @@ class NewsDataApiClient:
             # Rate limit.
             if response.status_code == 429:
                 retry_after = _parse_retry_after(response.headers.get("Retry-After"))
-                if (
-                    _extract_error_code(body) in _QUOTA_EXHAUSTED_CODES
-                    or attempt >= self.max_retries
-                ):
-                    raise NewsdataRateLimitError(
+                error_code = _extract_error_code(body)
+                exc_cls = _QUOTA_EXHAUSTED_ERRORS.get(error_code or "", NewsdataRateLimitError)
+                if error_code in _QUOTA_EXHAUSTED_ERRORS or attempt >= self.max_retries:
+                    raise exc_cls(
                         body,
                         status_code=429,
                         response_body=body if isinstance(body, dict) else None,

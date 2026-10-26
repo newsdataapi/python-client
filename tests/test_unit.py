@@ -19,6 +19,8 @@ import responses
 from newsdataapi import (
     NewsDataApiClient,
     NewsdataAPIError,
+    NewsdataApiKeyLimitExceededError,
+    NewsdataApiLimitExceededError,
     NewsDataApiWebSocket,
     NewsdataAuthError,
     NewsdataException,
@@ -728,6 +730,26 @@ def test_include_headers_merges_into_response(
     assert response["response_headers"]["X-API-Limit-Remaining"] == "100"
 
 
+def test_include_headers_merges_apikey_limit_header(
+    mocked_responses: responses.RequestsMock,
+) -> None:
+    """``X-APIKEY-Limit-Remaining`` is only sent for API keys with a credit
+    cap, but the client passes it through like any other header."""
+    with NewsDataApiClient("k", include_headers=True, max_retries=1) as c:
+        mocked_responses.get(
+            LATEST_URL,
+            json={"status": "success", "results": []},
+            status=200,
+            headers={
+                "X-API-Limit-Remaining": "100",
+                "X-APIKEY-Limit-Remaining": "25",
+            },
+        )
+        response = c.latest_api()
+    assert isinstance(response, dict)
+    assert response["response_headers"]["X-APIKEY-Limit-Remaining"] == "25"
+
+
 def test_status_error_with_200_raises_api_error(
     client: NewsDataApiClient,
     mocked_responses: responses.RequestsMock,
@@ -835,18 +857,27 @@ def test_429_exhausted_raises_rate_limit_with_retry_after(
     assert exc_info.value.retry_after == 5
 
 
-@pytest.mark.parametrize("code", ["ApiKeyLimitExceeded", "ApiLimitExceeded"])
+@pytest.mark.parametrize(
+    ("code", "expected_exc"),
+    [
+        ("ApiLimitExceeded", NewsdataApiLimitExceededError),
+        ("ApiKeyLimitExceeded", NewsdataApiKeyLimitExceededError),
+    ],
+)
 def test_429_quota_exhausted_raises_without_retry(
     code: str,
+    expected_exc: type[NewsdataRateLimitError],
     client: NewsDataApiClient,
     mocked_responses: responses.RequestsMock,
     no_sleep: None,
 ) -> None:
-    """A 429 whose error code means exhausted credits is never retried."""
+    """A 429 whose error code means exhausted credits is never retried,
+    and raises the specific subclass for that code."""
     body = {"status": "error", "results": {"message": "limit", "code": code}}
     mocked_responses.get(LATEST_URL, json=body, status=429)
-    with pytest.raises(NewsdataRateLimitError) as exc_info:
+    with pytest.raises(expected_exc) as exc_info:
         client.latest_api()
+    assert isinstance(exc_info.value, NewsdataRateLimitError)
     assert len(mocked_responses.calls) == 1
     assert exc_info.value.response_body == body
 

@@ -4,6 +4,8 @@ from .client import NewsDataApiClient
 from .csv_export import save_to_csv
 from .exceptions import (
     NewsdataAPIError,
+    NewsdataApiKeyLimitExceededError,
+    NewsdataApiLimitExceededError,
     NewsdataAuthError,
     NewsdataException,
     NewsdataNetworkError,
@@ -15,12 +17,14 @@ from .exceptions import (
 )
 from .websocket import NewsDataApiWebSocket
 
-__version__ = "0.3.3"
+__version__ = "0.3.4"
 
 __all__ = [
     "NewsDataApiClient",
     "NewsDataApiWebSocket",
     "NewsdataAPIError",
+    "NewsdataApiKeyLimitExceededError",
+    "NewsdataApiLimitExceededError",
     "NewsdataAuthError",
     "NewsdataException",
     "NewsdataNetworkError",

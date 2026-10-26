@@ -40,7 +40,7 @@ class NewsdataAPIError(NewsdataException):
         message: Any,
         *,
         status_code: int | None = None,
-        response_body: dict[str, Any] | None = None,
+        response_body: dict[str, Any] | None = None
     ) -> None:
         super().__init__(message)
         self.status_code = status_code
@@ -74,6 +74,21 @@ class NewsdataRateLimitError(NewsdataAPIError):
             response_body=response_body,
         )
         self.retry_after = retry_after
+
+
+class NewsdataApiLimitExceededError(NewsdataRateLimitError):
+    """Raised on 429 when the account's overall credit pool is exhausted.
+
+    Blocks every API key on the account, regardless of any per-key cap.
+    Never retried.
+    """
+
+
+class NewsdataApiKeyLimitExceededError(NewsdataRateLimitError):
+    """Raised on 429 when this specific API key's own credit cap
+    (``max_credit_limit``) is exhausted, even though the account's overall
+    pool may still have credits left. Never retried.
+    """
 
 
 class NewsdataServerError(NewsdataAPIError):
