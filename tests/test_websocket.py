@@ -12,7 +12,7 @@ import json
 
 import pytest
 from websockets.datastructures import Headers
-from websockets.exceptions import ConnectionClosedError, InvalidStatus
+from websockets.exceptions import ConnectionClosedError, InvalidMessage, InvalidStatus
 from websockets.frames import Close
 from websockets.http11 import Response
 
@@ -39,12 +39,22 @@ def _news(*titles: str) -> str:
     )
 
 
+def _error(code: str, message: str = "rejected") -> str:
+    """An error frame, shaped like the server's error response."""
+    return json.dumps({"status": "error", "results": {"message": message, "code": code}})
+
+
 def _closed(code: int, reason: str = "") -> ConnectionClosedError:
     return ConnectionClosedError(Close(code, reason), None)
 
 
 def _invalid_status(status: int) -> InvalidStatus:
     return InvalidStatus(Response(status, "x", Headers(), b""))
+
+
+# Terminals the fakes raise from connect() itself (handshake / network
+# failures) rather than during iteration.
+_CONNECT_ERRORS = (InvalidStatus, InvalidMessage, OSError, asyncio.TimeoutError)
 
 
 class _FakeWS:
@@ -75,9 +85,10 @@ class _FakeWS:
 class _FakeConnect:
     """Scripted ``connect``: each attempt is ``(messages, terminal)``.
 
-    ``terminal`` raised from ``connect()`` itself if it is an ``InvalidStatus``
-    or ``OSError`` (handshake / network failure), otherwise during iteration.
-    Once the script is exhausted it closes with 1008 to stop any reconnect loop.
+    ``terminal`` raised from ``connect()`` itself if it is one of
+    ``_CONNECT_ERRORS`` (handshake / network failure), otherwise during
+    iteration. Once the script is exhausted it closes with 1008 to stop any
+    reconnect loop.
     """
 
     def __init__(self, *attempts: tuple[list, BaseException | None]) -> None:
@@ -95,7 +106,7 @@ class _FakeConnect:
             messages, terminal = self._attempts.pop(0)
         else:
             messages, terminal = [], _closed(1008, "exhausted")
-        if isinstance(terminal, (InvalidStatus, OSError)):
+        if isinstance(terminal, _CONNECT_ERRORS):
             raise terminal
         conn = _FakeWS(messages, terminal)
         self.conns.append(conn)
@@ -239,6 +250,18 @@ def test_close_1008_raises_auth_with_reason(monkeypatch: pytest.MonkeyPatch) -> 
     assert fake.calls == 1
 
 
+def test_error_response_raises_auth_with_it(monkeypatch: pytest.MonkeyPatch) -> None:
+    error = _error("ApiLimitExceeded", "out of credits")
+    fake = _FakeConnect(([_news("A"), error], _closed(1008, "ApiLimitExceeded")))
+    monkeypatch.setattr(CONNECT, fake)
+    got: list[str] = []
+    with pytest.raises(NewsdataWebSocketAuthError) as exc_info:
+        _collect(_ws(), got)  # reconnect=True default
+    assert got == ["A"]  # the error response is raised, never yielded
+    assert exc_info.value.args[0] == json.loads(error)
+    assert fake.calls == 1
+
+
 # --- reconnect=False: stop on first drop ------------------------------------
 
 
@@ -267,6 +290,17 @@ def test_no_reconnect_handshake_5xx_raises(monkeypatch: pytest.MonkeyPatch) -> N
     with pytest.raises(NewsdataWebSocketError) as exc_info:
         list(_ws(reconnect=False).stream("r"))
     assert not isinstance(exc_info.value, NewsdataWebSocketAuthError)
+
+
+def test_no_reconnect_server_error_response_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    error = _error("ServerError", "try again later")
+    fake = _FakeConnect(([error], _closed(1011, "ServerError")))
+    monkeypatch.setattr(CONNECT, fake)
+    with pytest.raises(NewsdataWebSocketError) as exc_info:
+        list(_ws(reconnect=False).stream("r"))
+    assert not isinstance(exc_info.value, NewsdataWebSocketAuthError)
+    assert exc_info.value.args[0] == json.loads(error)
+    assert fake.calls == 1
 
 
 # --- reconnect=True: retry transient drops ----------------------------------
@@ -324,6 +358,40 @@ def test_reconnects_on_network_error(monkeypatch: pytest.MonkeyPatch) -> None:
     assert fake.calls == 2
 
 
+def test_reconnects_on_handshake_connection_lost(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = _FakeConnect(
+        ([], InvalidMessage("did not receive a valid HTTP response")),  # lost mid-handshake
+        ([_news("A")], _closed(1008, "stop")),
+    )
+    monkeypatch.setattr(CONNECT, fake)
+    got: list[str] = []
+    with pytest.raises(NewsdataWebSocketAuthError):
+        _collect(_ws(), got)
+    assert got == ["A"]
+    assert fake.calls == 2
+
+
+def test_server_error_responses_keep_backing_off(monkeypatch: pytest.MonkeyPatch) -> None:
+    slept: list[float] = []
+    monkeypatch.setattr(
+        "newsdataapi.websocket.time.sleep", lambda d: slept.append(d)
+    )
+    refused = ([_error("ServerError")], _closed(1011, "ServerError"))
+    fake = _FakeConnect(
+        refused,
+        refused,
+        refused,
+        ([_news("A")], _closed(1013, "SendTimeout")),  # accepted -> backoff starts over
+        ([_news("B")], _closed(1008, "stop")),
+    )
+    monkeypatch.setattr(CONNECT, fake)
+    got: list[str] = []
+    with pytest.raises(NewsdataWebSocketAuthError):
+        _collect(_ws(), got)
+    assert got == ["A", "B"]  # error responses are never yielded
+    assert slept == [1.0, 2.0, 4.0, 1.0]
+
+
 # ===========================================================================
 # Async streaming (NewsDataApiWebSocket.stream_async)
 # ===========================================================================
@@ -373,8 +441,8 @@ class _FakeAsyncCM:
 class _FakeAsyncConnect:
     """Scripted async ``connect``: each attempt is ``(messages, terminal)``.
 
-    An ``InvalidStatus`` / ``OSError`` terminal is raised from ``__aenter__``
-    (handshake failure); otherwise it is raised during async iteration.
+    A ``_CONNECT_ERRORS`` terminal is raised from ``__aenter__`` (handshake
+    failure); otherwise it is raised during async iteration.
     """
 
     def __init__(self, *attempts: tuple[list, BaseException | None]) -> None:
@@ -392,7 +460,7 @@ class _FakeAsyncConnect:
             messages, terminal = self._attempts.pop(0)
         else:
             messages, terminal = [], _closed(1008, "exhausted")
-        if isinstance(terminal, (InvalidStatus, OSError)):
+        if isinstance(terminal, _CONNECT_ERRORS):
             return _FakeAsyncCM(None, terminal)
         conn = _FakeAsyncWS(messages, terminal)
         self.conns.append(conn)
@@ -502,6 +570,18 @@ def test_async_close_1008_raises_auth_with_reason(monkeypatch: pytest.MonkeyPatc
     assert fake.calls == 1
 
 
+def test_async_error_response_raises_auth_with_it(monkeypatch: pytest.MonkeyPatch) -> None:
+    error = _error("ApiLimitExceeded", "out of credits")
+    fake = _FakeAsyncConnect(([_news("A"), error], _closed(1008, "ApiLimitExceeded")))
+    monkeypatch.setattr(CONNECT_ASYNC, fake)
+    got: list[str] = []
+    with pytest.raises(NewsdataWebSocketAuthError) as exc_info:
+        _acollect(_ws(), got)  # reconnect=True default
+    assert got == ["A"]  # the error response is raised, never yielded
+    assert exc_info.value.args[0] == json.loads(error)
+    assert fake.calls == 1
+
+
 # --- reconnect=False --------------------------------------------------------
 
 
@@ -542,3 +622,52 @@ def test_async_reconnects_on_network_error(monkeypatch: pytest.MonkeyPatch) -> N
         _acollect(_ws(), got)
     assert got == ["A"]
     assert fake.calls == 2
+
+
+def test_async_reconnects_on_handshake_connection_lost(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = _FakeAsyncConnect(
+        ([], InvalidMessage("did not receive a valid HTTP response")),  # lost mid-handshake
+        ([_news("A")], _closed(1008, "stop")),
+    )
+    monkeypatch.setattr(CONNECT_ASYNC, fake)
+    got: list[str] = []
+    with pytest.raises(NewsdataWebSocketAuthError):
+        _acollect(_ws(), got)
+    assert got == ["A"]
+    assert fake.calls == 2
+
+
+def test_async_reconnects_on_open_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = _FakeAsyncConnect(
+        ([], asyncio.TimeoutError()),  # handshake timeout; not an OSError on Python 3.10
+        ([_news("A")], _closed(1008, "stop")),
+    )
+    monkeypatch.setattr(CONNECT_ASYNC, fake)
+    got: list[str] = []
+    with pytest.raises(NewsdataWebSocketAuthError):
+        _acollect(_ws(), got)
+    assert got == ["A"]
+    assert fake.calls == 2
+
+
+def test_async_server_error_responses_keep_backing_off(monkeypatch: pytest.MonkeyPatch) -> None:
+    slept: list[float] = []
+
+    async def record(delay: float) -> None:
+        slept.append(delay)
+
+    monkeypatch.setattr("newsdataapi.websocket.asyncio.sleep", record)
+    refused = ([_error("ServerError")], _closed(1011, "ServerError"))
+    fake = _FakeAsyncConnect(
+        refused,
+        refused,
+        refused,
+        ([_news("A")], _closed(1013, "SendTimeout")),  # accepted -> backoff starts over
+        ([_news("B")], _closed(1008, "stop")),
+    )
+    monkeypatch.setattr(CONNECT_ASYNC, fake)
+    got: list[str] = []
+    with pytest.raises(NewsdataWebSocketAuthError):
+        _acollect(_ws(), got)
+    assert got == ["A", "B"]  # error responses are never yielded
+    assert slept == [1.0, 2.0, 4.0, 1.0]

@@ -30,7 +30,7 @@ _WEBSOCKET_SUPPORTED = sys.version_info >= (3, 10)
 
 if _WEBSOCKET_SUPPORTED:
     from websockets.asyncio import client as _asyncio_client
-    from websockets.exceptions import ConnectionClosedError, InvalidStatus
+    from websockets.exceptions import ConnectionClosedError, InvalidMessage, InvalidStatus
     from websockets.sync import client as _sync_client
 
 logger = logging.getLogger(__name__)
@@ -44,13 +44,16 @@ def _check_registration_id(registration_id: str) -> None:
         )
 
 
-def _permanent_auth_error(exc: Exception) -> NewsdataWebSocketAuthError | None:
+def _permanent_auth_error(
+    exc: Exception, error_response: dict[str, Any] | None
+) -> NewsdataWebSocketAuthError | None:
     """Return the auth error to raise if ``exc`` is a permanent rejection.
 
     Returns ``None`` for transient failures (which the caller reconnects on):
     handshake 401/403 and policy-violation close 1008 are permanent; anything
     else (other handshake status, other close codes, network ``OSError``) is
-    transient.
+    transient. ``error_response`` is the error response the server sent just
+    before closing, if any; it becomes the exception's argument.
     """
     if isinstance(exc, InvalidStatus):
         if exc.response.status_code in (401, 403):
@@ -59,14 +62,20 @@ def _permanent_auth_error(exc: Exception) -> NewsdataWebSocketAuthError | None:
     if isinstance(exc, ConnectionClosedError):
         close = exc.rcvd
         if close is not None and close.code == constants.WS_POLICY_VIOLATION:
+            if error_response is not None:
+                return NewsdataWebSocketAuthError(error_response)
             return NewsdataWebSocketAuthError(close.reason or "connection rejected")
         return None
     return None
 
 
-def _transient_error(exc: Exception) -> NewsdataWebSocketError:
+def _transient_error(
+    exc: Exception, error_response: dict[str, Any] | None
+) -> NewsdataWebSocketError:
     """Wrap a transient failure as a :class:`NewsdataWebSocketError` (used only
     when ``reconnect=False`` so the caller stops instead of retrying)."""
+    if error_response is not None:
+        return NewsdataWebSocketError(error_response)
     if isinstance(exc, InvalidStatus):
         return NewsdataWebSocketError(f"handshake failed (HTTP {exc.response.status_code})")
     if isinstance(exc, ConnectionClosedError):
@@ -295,24 +304,38 @@ class NewsDataApiWebSocket:
         url = self._url(registration_id)
         delay = self._reconnect_delay
         while True:
+            error_response: dict[str, Any] | None = None
             try:
                 with _sync_client.connect(url, **self._connect_kwargs()) as websocket:
                     self._ws_sync = websocket
                     logger.info("connected to %s", _redact_url(url))
-                    delay = self._reconnect_delay  # reset after a successful connect
+                    # reset after a successful connect, unless the server refuses it
+                    refused_delay, delay = delay, self._reconnect_delay
                     for message in websocket:
                         try:
                             response = json.loads(message)
                         except ValueError:
                             continue  # skip malformed frames
-                        if isinstance(response, dict):
-                            yield response
-            except (InvalidStatus, ConnectionClosedError, OSError) as exc:
-                auth = _permanent_auth_error(exc)
+                        if not isinstance(response, dict):
+                            continue
+                        if response.get("status") == "error":
+                            # sent right before the server closes the connection:
+                            # raise it with that close, and keep backing off
+                            error_response, delay = response, refused_delay
+                            continue
+                        yield response
+            except (
+                InvalidStatus,
+                InvalidMessage,  # connection lost during the handshake
+                ConnectionClosedError,
+                OSError,
+                asyncio.TimeoutError,  # not an OSError on Python 3.10
+            ) as exc:
+                auth = _permanent_auth_error(exc, error_response)
                 if auth is not None:
                     raise auth from exc
                 if not self._reconnect:
-                    raise _transient_error(exc) from exc
+                    raise _transient_error(exc, error_response) from exc
                 logger.warning(
                     "connection failed (%s); reconnecting in %.1fs", exc, delay
                 )
@@ -330,26 +353,40 @@ class NewsDataApiWebSocket:
         url = self._url(registration_id)
         delay = self._reconnect_delay
         while True:
+            error_response: dict[str, Any] | None = None
             try:
                 async with _asyncio_client.connect(
                     url, **self._connect_kwargs()
                 ) as websocket:
                     self._ws_async = websocket
                     logger.info("connected to %s", _redact_url(url))
-                    delay = self._reconnect_delay  # reset after a successful connect
+                    # reset after a successful connect, unless the server refuses it
+                    refused_delay, delay = delay, self._reconnect_delay
                     async for message in websocket:
                         try:
                             response = json.loads(message)
                         except ValueError:
                             continue  # skip malformed frames
-                        if isinstance(response, dict):
-                            yield response
-            except (InvalidStatus, ConnectionClosedError, OSError) as exc:
-                auth = _permanent_auth_error(exc)
+                        if not isinstance(response, dict):
+                            continue
+                        if response.get("status") == "error":
+                            # sent right before the server closes the connection:
+                            # raise it with that close, and keep backing off
+                            error_response, delay = response, refused_delay
+                            continue
+                        yield response
+            except (
+                InvalidStatus,
+                InvalidMessage,  # connection lost during the handshake
+                ConnectionClosedError,
+                OSError,
+                asyncio.TimeoutError,  # not an OSError on Python 3.10
+            ) as exc:
+                auth = _permanent_auth_error(exc, error_response)
                 if auth is not None:
                     raise auth from exc
                 if not self._reconnect:
-                    raise _transient_error(exc) from exc
+                    raise _transient_error(exc, error_response) from exc
                 logger.warning(
                     "connection failed (%s); reconnecting in %.1fs", exc, delay
                 )
