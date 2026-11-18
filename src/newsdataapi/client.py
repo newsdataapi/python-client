@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import os
 import time
+import warnings
 from collections.abc import Iterator, Mapping
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
@@ -35,7 +36,17 @@ logger = logging.getLogger(__name__)
 # Parameter validation.
 # ---------------------------------------------------------------------------
 
-_BOOL_PARAMS = frozenset({"full_content", "image", "video", "removeduplicate"})
+_BOOL_PARAMS = frozenset(
+    {
+        "full_content",
+        "image",
+        "video",
+        "removeduplicate",
+        # v2 names
+        "content",
+        "remove_duplicate",
+    }
+)
 _INT_PARAMS = frozenset({"size"})
 _FLOAT_PARAMS = frozenset({"sentiment_score"})
 _STRING_PARAMS = frozenset(
@@ -72,6 +83,16 @@ _STRING_PARAMS = frozenset(
         "interval",
         "creator",
         "datatype",
+        # v2 names
+        "q_in_title",
+        "q_in_meta",
+        "source_url",
+        "exclude_source_url",
+        "source_priority",
+        "exclude_country",
+        "exclude_category",
+        "exclude_language",
+        "exclude_field",
     }
 )
 
@@ -85,6 +106,12 @@ _MUTEX_GROUPS: tuple[tuple[str, ...], ...] = (
     ("category", "excludecategory"),
     ("language", "excludelanguage"),
     ("domain", "domainurl", "excludedomain", "excludedomainurl"),
+    # v2 names
+    ("q", "q_in_title", "q_in_meta"),
+    ("country", "exclude_country"),
+    ("category", "exclude_category"),
+    ("language", "exclude_language"),
+    ("source_url", "exclude_source_url"),
 )
 
 _QUOTA_EXHAUSTED_ERRORS: dict[str, type[NewsdataRateLimitError]] = {
@@ -112,7 +139,8 @@ def _validate_params(user_params: Mapping[str, Any]) -> dict[str, Any]:
       ``domain``/``domainurl``/``excludedomain``/``excludedomainurl``) are
       enforced client-side;
       setting more than one from any group raises
-      ``NewsdataValidationError`` before the request leaves.
+      ``NewsdataValidationError`` before the request leaves. The v2 names
+      of these groups are enforced the same way.
     * ``sentiment_score`` requires ``sentiment`` to be set; passing
       ``sentiment_score`` alone raises ``NewsdataValidationError``.
 
@@ -333,6 +361,16 @@ def _redact_url(url: str, param: str = "apikey") -> str:
     return urlunparse(parsed._replace(query=urlencode(pairs)))
 
 
+def _warn_deprecated(old: str, new: str) -> None:
+    """Warn that the v1 method ``old`` is deprecated in favor of ``new``."""
+    warnings.warn(
+        f"{old}() is deprecated and will be removed in a future release; "
+        f"use {new}() instead.",
+        DeprecationWarning,
+        stacklevel=3,  # point at the code that called the deprecated method
+    )
+
+
 # ---------------------------------------------------------------------------
 # Client.
 # ---------------------------------------------------------------------------
@@ -344,7 +382,11 @@ class NewsDataApiClient:
     Example::
 
         with NewsDataApiClient("YOUR_API_KEY") as client:
-            response = client.latest_api(q="bitcoin", country="us")
+            response = client.news(q="bitcoin", country="us")
+
+    The ``*_api`` methods (:meth:`latest_api`, :meth:`archive_api`, ...) are
+    deprecated; use :meth:`news`, :meth:`market`, :meth:`crypto`,
+    :meth:`sources` and the ``count_*`` methods instead.
 
     The client owns a single :class:`requests.Session` for connection
     pooling. Pass ``session=...`` to inject your own (it will not be closed
@@ -352,9 +394,9 @@ class NewsDataApiClient:
     :meth:`close` explicitly, to release the session.
 
     All endpoint parameters are keyword-only except for the required
-    ``from_date`` / ``to_date`` on the count endpoints. Most parameters
-    accept either a single string or a ``list[str]``; lists are
-    comma-joined before being sent to the API.
+    ``from_date`` / ``to_date`` on the deprecated ``*count_api`` methods.
+    Most parameters accept either a single string or a ``list[str]``; lists
+    are comma-joined before being sent to the API.
     """
 
     proxies: dict[str, Any] | None
@@ -461,7 +503,9 @@ class NewsDataApiClient:
     def set_base_url(self, new_base_url: str) -> None:
         """Override the base URL (e.g. for a staging or proxied environment).
 
-        The new URL is normalized to end with a trailing slash so that
+        This is the API root without a version segment (the default is
+        ``https://newsdata.io/api``); endpoint paths add the version. The
+        new URL is normalized to end with a trailing slash so that
         :func:`urllib.parse.urljoin` resolves endpoint paths correctly.
         """
         if not isinstance(new_base_url, str) or not new_base_url:
@@ -516,11 +560,15 @@ class NewsDataApiClient:
     ) -> dict[str, Any] | Iterator[dict[str, Any]]:
         """Fetch latest news.
 
+        .. deprecated:: 0.4.0
+            Use :meth:`news` instead.
+
         See https://newsdata.io/documentation for parameter descriptions.
 
         Returns a dict by default, the merged dict if ``scroll=True``, or
         an iterator of per-page dicts if ``paginate=True``.
         """
+        _warn_deprecated("latest_api", "news")
         return self._dispatch(
             constants.LATEST_ENDPOINT,
             {
@@ -610,8 +658,12 @@ class NewsDataApiClient:
     ) -> dict[str, Any] | Iterator[dict[str, Any]]:
         """Fetch news from the archive.
 
+        .. deprecated:: 0.4.0
+            Use :meth:`news` instead.
+
         See https://newsdata.io/documentation for parameter descriptions.
         """
+        _warn_deprecated("archive_api", "news")
         return self._dispatch(
             constants.ARCHIVE_ENDPOINT,
             {
@@ -669,9 +721,13 @@ class NewsDataApiClient:
     ) -> dict[str, Any]:
         """List available news sources.
 
+        .. deprecated:: 0.4.0
+            Use :meth:`sources` instead.
+
         Sources is a single-page endpoint; ``scroll`` and ``paginate`` are
         not supported.
         """
+        _warn_deprecated("sources_api", "sources")
         params = _validate_params(
             {
                 "country": country,
@@ -722,8 +778,12 @@ class NewsDataApiClient:
     ) -> dict[str, Any] | Iterator[dict[str, Any]]:
         """Fetch cryptocurrency news.
 
+        .. deprecated:: 0.4.0
+            Use :meth:`crypto` instead.
+
         See https://newsdata.io/documentation for parameter descriptions.
         """
+        _warn_deprecated("crypto_api", "crypto")
         return self._dispatch(
             constants.CRYPTO_ENDPOINT,
             {
@@ -806,8 +866,12 @@ class NewsDataApiClient:
     ) -> dict[str, Any] | Iterator[dict[str, Any]]:
         """Fetch market / financial news.
 
+        .. deprecated:: 0.4.0
+            Use :meth:`market` instead.
+
         See https://newsdata.io/documentation for parameter descriptions.
         """
+        _warn_deprecated("market_api", "market")
         return self._dispatch(
             constants.MARKET_ENDPOINT,
             {
@@ -894,12 +958,16 @@ class NewsDataApiClient:
     ) -> dict[str, Any] | Iterator[dict[str, Any]]:
         """Fetch aggregate counts of news for a date range.
 
+        .. deprecated:: 0.4.0
+            Use :meth:`count_news` instead.
+
         ``from_date`` and ``to_date`` are required. Returns a dict by
         default, the merged dict if ``scroll=True`` (concatenates per-bucket
         rows from every page; the final aggregate dict, if any, is captured
         under the ``aggregate`` key of the merged response), or an iterator
         of per-page dicts if ``paginate=True``.
         """
+        _warn_deprecated("count_api", "count_news")
         return self._dispatch(
             constants.COUNT_ENDPOINT,
             {
@@ -977,11 +1045,15 @@ class NewsDataApiClient:
     ) -> dict[str, Any] | Iterator[dict[str, Any]]:
         """Fetch aggregate counts of crypto news for a date range.
 
+        .. deprecated:: 0.4.0
+            Use :meth:`count_crypto` instead.
+
         ``from_date`` and ``to_date`` are required. Returns a dict by
         default, the merged dict if ``scroll=True`` (final aggregate dict,
         if any, captured under ``aggregate`` key), or an iterator of
         per-page dicts if ``paginate=True``.
         """
+        _warn_deprecated("crypto_count_api", "count_crypto")
         return self._dispatch(
             constants.CRYPTO_COUNT_ENDPOINT,
             {
@@ -1057,11 +1129,15 @@ class NewsDataApiClient:
     ) -> dict[str, Any] | Iterator[dict[str, Any]]:
         """Fetch aggregate counts of market news for a date range.
 
+        .. deprecated:: 0.4.0
+            Use :meth:`count_market` instead.
+
         ``from_date`` and ``to_date`` are required. Returns a dict by
         default, the merged dict if ``scroll=True`` (final aggregate dict,
         if any, captured under ``aggregate`` key), or an iterator of
         per-page dicts if ``paginate=True``.
         """
+        _warn_deprecated("market_count_api", "count_market")
         return self._dispatch(
             constants.MARKET_COUNT_ENDPOINT,
             {
@@ -1103,6 +1179,529 @@ class NewsDataApiClient:
             is_count=True,
         )
 
+    # ---- v2 endpoint methods ---------------------------------------------
+
+    def news(
+        self,
+        *,
+        q: str | None = None,
+        q_in_title: str | None = None,
+        q_in_meta: str | None = None,
+        country: str | list[str] | None = None,
+        exclude_country: str | list[str] | None = None,
+        category: str | list[str] | None = None,
+        exclude_category: str | list[str] | None = None,
+        language: str | list[str] | None = None,
+        exclude_language: str | list[str] | None = None,
+        source_url: str | list[str] | None = None,
+        exclude_source_url: str | list[str] | None = None,
+        source_priority: str | None = None,
+        from_date: str | None = None,
+        to_date: str | None = None,
+        timeframe: int | str | None = None,
+        timezone: str | None = None,
+        size: int | None = None,
+        content: bool | None = None,
+        image: bool | None = None,
+        video: bool | None = None,
+        page: str | None = None,
+        tag: str | list[str] | None = None,
+        sentiment: str | None = None,
+        sentiment_score: float | None = None,
+        region: str | list[str] | None = None,
+        organization: str | list[str] | None = None,
+        creator: str | list[str] | None = None,
+        datatype: str | list[str] | None = None,
+        exclude_field: str | list[str] | None = None,
+        remove_duplicate: bool | None = None,
+        id: str | list[str] | None = None,
+        url: str | None = None,
+        sort: str | None = None,
+        raw_query: str | None = None,
+        scroll: bool = False,
+        paginate: bool = False,
+        max_result: int | None = None,
+        max_pages: int | None = None,
+    ) -> dict[str, Any] | Iterator[dict[str, Any]]:
+        """Fetch the latest news, or historical news with ``from_date`` / ``to_date``.
+
+        See https://newsdata.io/documentation for parameter descriptions.
+
+        Returns a dict by default, the merged dict if ``scroll=True``, or
+        an iterator of per-page dicts if ``paginate=True``.
+        """
+        return self._dispatch(
+            constants.NEWS_V2_ENDPOINT,
+            {
+                "q": q,
+                "q_in_title": q_in_title,
+                "q_in_meta": q_in_meta,
+                "country": country,
+                "exclude_country": exclude_country,
+                "category": category,
+                "exclude_category": exclude_category,
+                "language": language,
+                "exclude_language": exclude_language,
+                "source_url": source_url,
+                "exclude_source_url": exclude_source_url,
+                "source_priority": source_priority,
+                "from_date": from_date,
+                "to_date": to_date,
+                "timeframe": str(timeframe) if timeframe is not None else None,
+                "timezone": timezone,
+                "size": size,
+                "content": content,
+                "image": image,
+                "video": video,
+                "page": page,
+                "tag": tag,
+                "sentiment": sentiment,
+                "sentiment_score": sentiment_score,
+                "region": region,
+                "organization": organization,
+                "creator": creator,
+                "datatype": datatype,
+                "exclude_field": exclude_field,
+                "remove_duplicate": remove_duplicate,
+                "id": id,
+                "url": url,
+                "sort": sort,
+                "raw_query": raw_query,
+            },
+            scroll=scroll,
+            paginate=paginate,
+            max_result=max_result,
+            max_pages=max_pages,
+            v2=True,
+        )
+
+    def market(
+        self,
+        *,
+        q: str | None = None,
+        q_in_title: str | None = None,
+        q_in_meta: str | None = None,
+        country: str | list[str] | None = None,
+        exclude_country: str | list[str] | None = None,
+        language: str | list[str] | None = None,
+        exclude_language: str | list[str] | None = None,
+        source_url: str | list[str] | None = None,
+        exclude_source_url: str | list[str] | None = None,
+        source_priority: str | None = None,
+        from_date: str | None = None,
+        to_date: str | None = None,
+        timeframe: int | str | None = None,
+        timezone: str | None = None,
+        size: int | None = None,
+        content: bool | None = None,
+        image: bool | None = None,
+        video: bool | None = None,
+        page: str | None = None,
+        tag: str | list[str] | None = None,
+        sentiment: str | None = None,
+        sentiment_score: float | None = None,
+        organization: str | list[str] | None = None,
+        market_id: str | list[str] | None = None,
+        creator: str | list[str] | None = None,
+        datatype: str | list[str] | None = None,
+        exclude_field: str | list[str] | None = None,
+        remove_duplicate: bool | None = None,
+        id: str | list[str] | None = None,
+        url: str | None = None,
+        sort: str | None = None,
+        raw_query: str | None = None,
+        scroll: bool = False,
+        paginate: bool = False,
+        max_result: int | None = None,
+        max_pages: int | None = None,
+    ) -> dict[str, Any] | Iterator[dict[str, Any]]:
+        """Fetch market / financial news.
+
+        See https://newsdata.io/documentation for parameter descriptions.
+        """
+        return self._dispatch(
+            constants.MARKET_V2_ENDPOINT,
+            {
+                "q": q,
+                "q_in_title": q_in_title,
+                "q_in_meta": q_in_meta,
+                "country": country,
+                "exclude_country": exclude_country,
+                "language": language,
+                "exclude_language": exclude_language,
+                "source_url": source_url,
+                "exclude_source_url": exclude_source_url,
+                "source_priority": source_priority,
+                "from_date": from_date,
+                "to_date": to_date,
+                "timeframe": str(timeframe) if timeframe is not None else None,
+                "timezone": timezone,
+                "size": size,
+                "content": content,
+                "image": image,
+                "video": video,
+                "page": page,
+                "tag": tag,
+                "sentiment": sentiment,
+                "sentiment_score": sentiment_score,
+                "organization": organization,
+                "market_id": market_id,
+                "creator": creator,
+                "datatype": datatype,
+                "exclude_field": exclude_field,
+                "remove_duplicate": remove_duplicate,
+                "id": id,
+                "url": url,
+                "sort": sort,
+                "raw_query": raw_query,
+            },
+            scroll=scroll,
+            paginate=paginate,
+            max_result=max_result,
+            max_pages=max_pages,
+            v2=True,
+        )
+
+    def crypto(
+        self,
+        *,
+        q: str | None = None,
+        q_in_title: str | None = None,
+        q_in_meta: str | None = None,
+        coin: str | list[str] | None = None,
+        language: str | list[str] | None = None,
+        exclude_language: str | list[str] | None = None,
+        source_url: str | list[str] | None = None,
+        exclude_source_url: str | list[str] | None = None,
+        source_priority: str | None = None,
+        from_date: str | None = None,
+        to_date: str | None = None,
+        timeframe: int | str | None = None,
+        timezone: str | None = None,
+        size: int | None = None,
+        content: bool | None = None,
+        image: bool | None = None,
+        video: bool | None = None,
+        page: str | None = None,
+        tag: str | list[str] | None = None,
+        sentiment: str | None = None,
+        exclude_field: str | list[str] | None = None,
+        remove_duplicate: bool | None = None,
+        id: str | list[str] | None = None,
+        url: str | None = None,
+        sort: str | None = None,
+        raw_query: str | None = None,
+        scroll: bool = False,
+        paginate: bool = False,
+        max_result: int | None = None,
+        max_pages: int | None = None,
+    ) -> dict[str, Any] | Iterator[dict[str, Any]]:
+        """Fetch cryptocurrency news.
+
+        See https://newsdata.io/documentation for parameter descriptions.
+        """
+        return self._dispatch(
+            constants.CRYPTO_V2_ENDPOINT,
+            {
+                "q": q,
+                "q_in_title": q_in_title,
+                "q_in_meta": q_in_meta,
+                "coin": coin,
+                "language": language,
+                "exclude_language": exclude_language,
+                "source_url": source_url,
+                "exclude_source_url": exclude_source_url,
+                "source_priority": source_priority,
+                "from_date": from_date,
+                "to_date": to_date,
+                "timeframe": str(timeframe) if timeframe is not None else None,
+                "timezone": timezone,
+                "size": size,
+                "content": content,
+                "image": image,
+                "video": video,
+                "page": page,
+                "tag": tag,
+                "sentiment": sentiment,
+                "exclude_field": exclude_field,
+                "remove_duplicate": remove_duplicate,
+                "id": id,
+                "url": url,
+                "sort": sort,
+                "raw_query": raw_query,
+            },
+            scroll=scroll,
+            paginate=paginate,
+            max_result=max_result,
+            max_pages=max_pages,
+            v2=True,
+        )
+
+    def sources(
+        self,
+        *,
+        country: str | list[str] | None = None,
+        category: str | list[str] | None = None,
+        language: str | list[str] | None = None,
+        source_priority: str | None = None,
+        source_url: str | list[str] | None = None,
+        raw_query: str | None = None,
+    ) -> dict[str, Any]:
+        """List available news sources.
+
+        Sources is a single-page endpoint; ``scroll`` and ``paginate`` are
+        not supported.
+        """
+        params = _validate_params(
+            {
+                "country": country,
+                "category": category,
+                "language": language,
+                "source_priority": source_priority,
+                "source_url": source_url,
+                "raw_query": raw_query,
+            }
+        )
+        return self._request(constants.SOURCES_V2_ENDPOINT, params)
+
+    def count_news(
+        self,
+        *,
+        q: str | None = None,
+        q_in_title: str | None = None,
+        q_in_meta: str | None = None,
+        country: str | list[str] | None = None,
+        exclude_country: str | list[str] | None = None,
+        category: str | list[str] | None = None,
+        exclude_category: str | list[str] | None = None,
+        language: str | list[str] | None = None,
+        exclude_language: str | list[str] | None = None,
+        source_url: str | list[str] | None = None,
+        exclude_source_url: str | list[str] | None = None,
+        source_priority: str | None = None,
+        from_date: str | None = None,
+        to_date: str | None = None,
+        timeframe: int | str | None = None,
+        interval: str | None = None,
+        size: int | None = None,
+        content: bool | None = None,
+        image: bool | None = None,
+        video: bool | None = None,
+        page: str | None = None,
+        tag: str | list[str] | None = None,
+        sentiment: str | None = None,
+        sentiment_score: float | None = None,
+        region: str | list[str] | None = None,
+        organization: str | list[str] | None = None,
+        creator: str | list[str] | None = None,
+        datatype: str | list[str] | None = None,
+        remove_duplicate: bool | None = None,
+        sort: str | None = None,
+        raw_query: str | None = None,
+        scroll: bool = False,
+        paginate: bool = False,
+        max_result: int | None = None,
+        max_pages: int | None = None,
+    ) -> dict[str, Any] | Iterator[dict[str, Any]]:
+        """Fetch counts of news per time interval.
+
+        See https://newsdata.io/documentation for parameter descriptions.
+
+        Returns a dict by default, the merged dict if ``scroll=True``, or
+        an iterator of per-page dicts if ``paginate=True``.
+        """
+        return self._dispatch(
+            constants.COUNT_NEWS_V2_ENDPOINT,
+            {
+                "q": q,
+                "q_in_title": q_in_title,
+                "q_in_meta": q_in_meta,
+                "country": country,
+                "exclude_country": exclude_country,
+                "category": category,
+                "exclude_category": exclude_category,
+                "language": language,
+                "exclude_language": exclude_language,
+                "source_url": source_url,
+                "exclude_source_url": exclude_source_url,
+                "source_priority": source_priority,
+                "from_date": from_date,
+                "to_date": to_date,
+                "timeframe": str(timeframe) if timeframe is not None else None,
+                "interval": interval,
+                "size": size,
+                "content": content,
+                "image": image,
+                "video": video,
+                "page": page,
+                "tag": tag,
+                "sentiment": sentiment,
+                "sentiment_score": sentiment_score,
+                "region": region,
+                "organization": organization,
+                "creator": creator,
+                "datatype": datatype,
+                "remove_duplicate": remove_duplicate,
+                "sort": sort,
+                "raw_query": raw_query,
+            },
+            scroll=scroll,
+            paginate=paginate,
+            max_result=max_result,
+            max_pages=max_pages,
+            v2=True,
+        )
+
+    def count_market(
+        self,
+        *,
+        q: str | None = None,
+        q_in_title: str | None = None,
+        q_in_meta: str | None = None,
+        country: str | list[str] | None = None,
+        exclude_country: str | list[str] | None = None,
+        language: str | list[str] | None = None,
+        exclude_language: str | list[str] | None = None,
+        source_url: str | list[str] | None = None,
+        exclude_source_url: str | list[str] | None = None,
+        source_priority: str | None = None,
+        from_date: str | None = None,
+        to_date: str | None = None,
+        timeframe: int | str | None = None,
+        interval: str | None = None,
+        size: int | None = None,
+        content: bool | None = None,
+        image: bool | None = None,
+        video: bool | None = None,
+        page: str | None = None,
+        tag: str | list[str] | None = None,
+        sentiment: str | None = None,
+        sentiment_score: float | None = None,
+        organization: str | list[str] | None = None,
+        market_id: str | list[str] | None = None,
+        creator: str | list[str] | None = None,
+        datatype: str | list[str] | None = None,
+        remove_duplicate: bool | None = None,
+        sort: str | None = None,
+        raw_query: str | None = None,
+        scroll: bool = False,
+        paginate: bool = False,
+        max_result: int | None = None,
+        max_pages: int | None = None,
+    ) -> dict[str, Any] | Iterator[dict[str, Any]]:
+        """Fetch counts of market news per time interval.
+
+        See https://newsdata.io/documentation for parameter descriptions.
+        """
+        return self._dispatch(
+            constants.COUNT_MARKET_V2_ENDPOINT,
+            {
+                "q": q,
+                "q_in_title": q_in_title,
+                "q_in_meta": q_in_meta,
+                "country": country,
+                "exclude_country": exclude_country,
+                "language": language,
+                "exclude_language": exclude_language,
+                "source_url": source_url,
+                "exclude_source_url": exclude_source_url,
+                "source_priority": source_priority,
+                "from_date": from_date,
+                "to_date": to_date,
+                "timeframe": str(timeframe) if timeframe is not None else None,
+                "interval": interval,
+                "size": size,
+                "content": content,
+                "image": image,
+                "video": video,
+                "page": page,
+                "tag": tag,
+                "sentiment": sentiment,
+                "sentiment_score": sentiment_score,
+                "organization": organization,
+                "market_id": market_id,
+                "creator": creator,
+                "datatype": datatype,
+                "remove_duplicate": remove_duplicate,
+                "sort": sort,
+                "raw_query": raw_query,
+            },
+            scroll=scroll,
+            paginate=paginate,
+            max_result=max_result,
+            max_pages=max_pages,
+            v2=True,
+        )
+
+    def count_crypto(
+        self,
+        *,
+        q: str | None = None,
+        q_in_title: str | None = None,
+        q_in_meta: str | None = None,
+        coin: str | list[str] | None = None,
+        language: str | list[str] | None = None,
+        exclude_language: str | list[str] | None = None,
+        source_url: str | list[str] | None = None,
+        exclude_source_url: str | list[str] | None = None,
+        source_priority: str | None = None,
+        from_date: str | None = None,
+        to_date: str | None = None,
+        timeframe: int | str | None = None,
+        interval: str | None = None,
+        size: int | None = None,
+        content: bool | None = None,
+        image: bool | None = None,
+        video: bool | None = None,
+        page: str | None = None,
+        tag: str | list[str] | None = None,
+        sentiment: str | None = None,
+        remove_duplicate: bool | None = None,
+        sort: str | None = None,
+        raw_query: str | None = None,
+        scroll: bool = False,
+        paginate: bool = False,
+        max_result: int | None = None,
+        max_pages: int | None = None,
+    ) -> dict[str, Any] | Iterator[dict[str, Any]]:
+        """Fetch counts of crypto news per time interval.
+
+        See https://newsdata.io/documentation for parameter descriptions.
+        """
+        return self._dispatch(
+            constants.COUNT_CRYPTO_V2_ENDPOINT,
+            {
+                "q": q,
+                "q_in_title": q_in_title,
+                "q_in_meta": q_in_meta,
+                "coin": coin,
+                "language": language,
+                "exclude_language": exclude_language,
+                "source_url": source_url,
+                "exclude_source_url": exclude_source_url,
+                "source_priority": source_priority,
+                "from_date": from_date,
+                "to_date": to_date,
+                "timeframe": str(timeframe) if timeframe is not None else None,
+                "interval": interval,
+                "size": size,
+                "content": content,
+                "image": image,
+                "video": video,
+                "page": page,
+                "tag": tag,
+                "sentiment": sentiment,
+                "remove_duplicate": remove_duplicate,
+                "sort": sort,
+                "raw_query": raw_query,
+            },
+            scroll=scroll,
+            paginate=paginate,
+            max_result=max_result,
+            max_pages=max_pages,
+            v2=True,
+        )
+
     # ---- CSV export convenience -----------------------------------------
 
     def save_to_csv(
@@ -1139,15 +1738,24 @@ class NewsDataApiClient:
         max_result: int | None = None,
         max_pages: int | None = None,
         is_count: bool = False,
+        v2: bool = False,
     ) -> dict[str, Any] | Iterator[dict[str, Any]]:
-        """Validate ``params`` and route to single / scroll / paginate execution."""
+        """Validate ``params`` and route to single / scroll / paginate execution.
+
+        ``v2`` selects the v2 response keys (``total_results`` / ``next_page``)
+        for the multi-page modes.
+        """
         if scroll and paginate:
             raise ValueError("scroll and paginate are mutually exclusive")
         validated = _validate_params(params)
         if scroll:
-            return self._scroll_all(endpoint, validated, max_result, is_count=is_count)
+            return self._scroll_all(
+                endpoint, validated, max_result, is_count=is_count, v2=v2
+            )
         if paginate:
-            return self._paginate(endpoint, validated, max_pages, is_count=is_count)
+            return self._paginate(
+                endpoint, validated, max_pages, is_count=is_count, v2=v2
+            )
         return self._request(endpoint, validated)
 
     def _request(
@@ -1243,15 +1851,25 @@ class NewsDataApiClient:
                 retry_after = _parse_retry_after(response.headers.get("Retry-After"))
                 error_code = _extract_error_code(body)
                 exc_cls = _QUOTA_EXHAUSTED_ERRORS.get(error_code or "", NewsdataRateLimitError)
-                if error_code in _QUOTA_EXHAUSTED_ERRORS or attempt >= self.max_retries:
+                # A wait longer than retry_backoff_max is left to the caller.
+                wait_too_long = (
+                    retry_after is not None and retry_after > self.retry_backoff_max
+                )
+                if (
+                    error_code in _QUOTA_EXHAUSTED_ERRORS
+                    or attempt >= self.max_retries
+                    or wait_too_long
+                ):
                     raise exc_cls(
                         body,
                         status_code=429,
                         response_body=body if isinstance(body, dict) else None,
                         retry_after=retry_after,
                     )
+                # Retry-After is in whole seconds: one second more keeps the
+                # retry from arriving just before the limit resets.
                 sleep_for = (
-                    retry_after
+                    retry_after + 1
                     if retry_after is not None
                     else self._compute_backoff(attempt)
                 )
@@ -1310,6 +1928,7 @@ class NewsDataApiClient:
         max_result: int | None,
         *,
         is_count: bool = False,
+        v2: bool = False,
     ) -> dict[str, Any]:
         """Follow ``nextPage`` cursors and return one merged response.
 
@@ -1317,11 +1936,15 @@ class NewsDataApiClient:
         page. For count endpoints (``is_count=True``), additionally captures
         the final aggregate dict — when the API returns ``results`` as a
         dict on the final page — under the ``aggregate`` key of the merged
-        response.
+        response. With ``v2=True`` the cursor and total are read from, and
+        returned under, ``next_page`` / ``total_results``.
         """
         if max_result is None:
             max_result = self.max_result
 
+        total_key, next_key = (
+            ("total_results", "next_page") if v2 else ("totalResults", "nextPage")
+        )
         accumulated: list[dict[str, Any]] = []
         request_params: dict[str, Any] = dict(params)
         total_results: Any = None
@@ -1331,7 +1954,7 @@ class NewsDataApiClient:
 
         while True:
             response = self._request(endpoint, request_params)
-            total_results = response.get("totalResults", total_results)
+            total_results = response.get(total_key, total_results)
             page_results = response.get("results", [])
             if isinstance(page_results, list):
                 accumulated.extend(page_results)
@@ -1339,7 +1962,7 @@ class NewsDataApiClient:
                 aggregate = page_results
             if self.include_headers:
                 last_headers = response.get("response_headers")
-            next_page = response.get("nextPage")
+            next_page = response.get(next_key)
 
             if max_result is not None and len(accumulated) >= max_result:
                 accumulated = accumulated[:max_result]
@@ -1352,9 +1975,9 @@ class NewsDataApiClient:
             time.sleep(self.pagination_delay)
 
         merged: dict[str, Any] = {
-            "totalResults": total_results,
+            total_key: total_results,
             "results": accumulated,
-            "nextPage": next_page,
+            next_key: next_page,
         }
         if aggregate is not None:
             merged["aggregate"] = aggregate
@@ -1369,11 +1992,16 @@ class NewsDataApiClient:
         max_pages: int | None,
         *,
         is_count: bool = False,
+        v2: bool = False,
     ) -> Iterator[dict[str, Any]]:
-        """Yield one response per page, up to ``max_pages``."""
+        """Yield one response per page, up to ``max_pages``.
+
+        With ``v2=True`` the cursor is read from ``next_page``.
+        """
         if max_pages is None:
             max_pages = self.max_pages
 
+        next_key = "next_page" if v2 else "nextPage"
         request_params: dict[str, Any] = dict(params)
         page_count = 0
         while True:
@@ -1387,7 +2015,7 @@ class NewsDataApiClient:
                 return
             if max_pages is not None and page_count >= max_pages:
                 return
-            next_page = response.get("nextPage")
+            next_page = response.get(next_key)
             if not next_page:
                 return
 

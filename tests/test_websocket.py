@@ -171,6 +171,13 @@ def test_connect_params_passed_through(monkeypatch: pytest.MonkeyPatch) -> None:
     assert kw["proxy"] == "http://proxy:3128"
 
 
+def test_no_message_size_limit(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = _FakeConnect(([_news("A")], None))
+    monkeypatch.setattr(CONNECT, fake)
+    list(_ws(reconnect=False).stream("r"))
+    assert fake.kwargs[0]["max_size"] is None  # websockets' default rejects messages over 1 MiB
+
+
 def test_custom_reconnect_backoff(monkeypatch: pytest.MonkeyPatch) -> None:
     slept: list[float] = []
     monkeypatch.setattr(
@@ -510,6 +517,13 @@ def test_async_url_and_params(monkeypatch: pytest.MonkeyPatch) -> None:
     assert fake.kwargs[0]["open_timeout"] == 5.0
     assert fake.kwargs[0]["additional_headers"] == headers
     assert fake.kwargs[0]["proxy"] == "http://proxy:3128"
+
+
+def test_async_no_message_size_limit(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = _FakeAsyncConnect(([_news("A")], None))
+    monkeypatch.setattr(CONNECT_ASYNC, fake)
+    _atitles(_ws(reconnect=False))
+    assert fake.kwargs[0]["max_size"] is None
 
 
 def test_async_yields_whole_server_responses(monkeypatch: pytest.MonkeyPatch) -> None:

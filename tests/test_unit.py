@@ -7,7 +7,9 @@ API key.
 
 from __future__ import annotations
 
+import csv
 import sys
+import warnings
 from datetime import datetime, timedelta, timezone
 from email.utils import format_datetime
 from pathlib import Path
@@ -210,6 +212,55 @@ def test_validate_no_mutex_when_one_per_group_set() -> None:
         "domain": "cnn.com",
         "tag": "tech",
     }
+
+
+@pytest.mark.parametrize(
+    ("params", "first_conflict"),
+    [
+        ({"q": "news", "q_in_title": "bar"}, "q"),
+        ({"q": "news", "q_in_meta": "bar"}, "q"),
+        ({"q_in_title": "foo", "q_in_meta": "bar"}, "q_in_title"),
+        ({"country": "us", "exclude_country": "gb"}, "country"),
+        ({"category": "business", "exclude_category": "sports"}, "category"),
+        ({"language": "en", "exclude_language": "fr"}, "language"),
+        ({"source_url": "bbc.com", "exclude_source_url": "cnn.com"}, "source_url"),
+    ],
+)
+def test_validate_v2_mutex_groups_raise(
+    params: dict[str, str],
+    first_conflict: str,
+) -> None:
+    """The v2 names of the mutex groups are caught client-side too."""
+    with pytest.raises(NewsdataValidationError) as exc_info:
+        _validate_params(params)
+    assert "mutually exclusive" in str(exc_info.value)
+    assert exc_info.value.param == first_conflict
+
+
+def test_validate_v2_param_types() -> None:
+    """v2 names get the same coercion as their v1 counterparts."""
+    out = _validate_params(
+        {
+            "q_in_title": "bitcoin",
+            "source_url": ["bbc.com", "cnn.com"],
+            "exclude_field": ["content", "ai.summary"],
+            "content": True,
+            "remove_duplicate": False,
+        }
+    )
+    assert out == {
+        "q_in_title": "bitcoin",
+        "source_url": "bbc.com,cnn.com",
+        "exclude_field": "content,ai.summary",
+        "content": 1,
+        "remove_duplicate": 0,
+    }
+
+
+def test_validate_v2_bool_param_rejects_non_bool() -> None:
+    with pytest.raises(NewsdataValidationError) as exc_info:
+        _validate_params({"content": 1})
+    assert exc_info.value.param == "content"
 
 
 def test_validate_float_param_accepts_float() -> None:
@@ -564,6 +615,104 @@ def test_csv_results_not_a_list_raises_type_error(tmp_path: Path) -> None:
         save_to_csv({"results": "not a list"}, tmp_path, filename="x")
 
 
+def test_csv_v2_nested_fields_become_dotted_columns(tmp_path: Path) -> None:
+    """A v2 response gets one column per nested field, at any depth."""
+    media = {"image_url": "https://img.example/1.png", "video_url": None}
+    response = {
+        "status": "success",
+        "total_results": 1,
+        "results": [
+            {
+                "id": "a1",
+                "title": "T",
+                "keyword": ["btc", "eth"],
+                "media": media,
+                "source": {"name": "BBC", "priority": 10},
+                "ai": {
+                    "sentiment": {"label": "positive", "score": {"positive": 90.5}},
+                    "tag": ["crypto"],
+                },
+            }
+        ],
+        "next_page": None,
+    }
+    out = save_to_csv(response, tmp_path, filename="v2")
+    with out.open(newline="", encoding="utf-8") as fh:
+        rows = list(csv.DictReader(fh))
+    assert rows == [
+        {
+            "id": "a1",
+            "title": "T",
+            "keyword": "btc,eth",
+            "media.image_url": "https://img.example/1.png",
+            "media.video_url": "",
+            "source.name": "BBC",
+            "source.priority": "10",
+            "ai.sentiment.label": "positive",
+            "ai.sentiment.score.positive": "90.5",
+            "ai.tag": "crypto",
+        }
+    ]
+    # The input is not modified.
+    assert media == {"image_url": "https://img.example/1.png", "video_url": None}
+
+
+def test_csv_v2_list_of_objects_is_json(tmp_path: Path) -> None:
+    response = {
+        "status": "success",
+        "total_results": 1,
+        "results": [
+            {
+                "name": "BBC",
+                "language": [{"code": "en", "name": "english"}],
+                "stat": {"article_count": 5},
+            }
+        ],
+    }
+    out = save_to_csv(response, tmp_path, filename="v2sources")
+    with out.open(newline="", encoding="utf-8") as fh:
+        rows = list(csv.DictReader(fh))
+    assert rows == [
+        {
+            "name": "BBC",
+            "language": '[{"code": "en", "name": "english"}]',
+            "stat.article_count": "5",
+        }
+    ]
+
+
+def test_csv_v2_mixed_rows_use_union_of_columns(tmp_path: Path) -> None:
+    """A field that is nested in one row and plain in another keeps both columns."""
+    response = {
+        "total_results": 2,
+        "results": [
+            {"id": "1", "ai": {"sentiment": {"label": "neutral"}}},
+            {"id": "2", "ai": {"sentiment": "not available"}},
+        ],
+    }
+    out = save_to_csv(response, tmp_path, filename="v2mixed")
+    with out.open(newline="", encoding="utf-8") as fh:
+        rows = list(csv.DictReader(fh))
+    assert rows == [
+        {"id": "1", "ai.sentiment.label": "neutral", "ai.sentiment": ""},
+        {"id": "2", "ai.sentiment.label": "", "ai.sentiment": "not available"},
+    ]
+
+
+def test_csv_v1_response_keeps_stringified_dict_cells(tmp_path: Path) -> None:
+    """A v1 response (``totalResults``) is written exactly as before."""
+    response = {
+        "status": "success",
+        "totalResults": 1,
+        "results": [{"title": "T", "sentiment_stats": {"positive": 1, "negative": 2}}],
+        "nextPage": None,
+    }
+    out = save_to_csv(response, tmp_path, filename="v1")
+    with out.open(newline="", encoding="utf-8") as fh:
+        rows = list(csv.DictReader(fh))
+    assert rows == [{"title": "T", "sentiment_stats": "positive:1,negative:2"}]
+
+
 # ===========================================================================
 # Exception hierarchy
 # ===========================================================================
@@ -845,6 +994,7 @@ def test_429_exhausted_raises_rate_limit_with_retry_after(
     mocked_responses: responses.RequestsMock,
     no_sleep: None,
 ) -> None:
+    client.retry_backoff_max = 60.0  # a Retry-After above this is not retried
     for _ in range(client.max_retries):
         mocked_responses.get(
             LATEST_URL,
@@ -855,6 +1005,59 @@ def test_429_exhausted_raises_rate_limit_with_retry_after(
     with pytest.raises(NewsdataRateLimitError) as exc_info:
         client.latest_api()
     assert exc_info.value.retry_after == 5
+
+
+@pytest.mark.parametrize(
+    ("retry_after", "expected_sleep"),
+    [("0", 1), ("5", 6), ("60", 61)],
+)
+def test_429_sleeps_one_second_longer_than_retry_after(
+    retry_after: str,
+    expected_sleep: int,
+    client: NewsDataApiClient,
+    mocked_responses: responses.RequestsMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Retry-After is in whole seconds: the extra second keeps the retry from
+    arriving just before the limit resets, and a ``0`` from retrying at once."""
+    slept: list[float] = []
+    monkeypatch.setattr("newsdataapi.client.time.sleep", slept.append)
+    client.retry_backoff_max = 60.0
+    mocked_responses.get(
+        LATEST_URL,
+        json={"status": "error"},
+        status=429,
+        headers={"Retry-After": retry_after},
+    )
+    mocked_responses.get(
+        LATEST_URL,
+        json={"status": "success", "results": []},
+        status=200,
+    )
+    client.latest_api()
+    assert slept == [expected_sleep]
+
+
+def test_429_retry_after_above_backoff_max_raises_without_retry(
+    client: NewsDataApiClient,
+    mocked_responses: responses.RequestsMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A Retry-After longer than retry_backoff_max is not waited for."""
+    slept: list[float] = []
+    monkeypatch.setattr("newsdataapi.client.time.sleep", slept.append)
+    client.retry_backoff_max = 60.0
+    mocked_responses.get(
+        LATEST_URL,
+        json={"status": "error"},
+        status=429,
+        headers={"Retry-After": "61"},
+    )
+    with pytest.raises(NewsdataRateLimitError) as exc_info:
+        client.latest_api()
+    assert exc_info.value.retry_after == 61
+    assert len(mocked_responses.calls) == 1
+    assert slept == []
 
 
 @pytest.mark.parametrize(
@@ -1371,6 +1574,396 @@ def test_raw_query_accepts_excludedomainurl(
     sent_url = mocked_responses.calls[0].request.url
     assert sent_url is not None
     assert "excludedomainurl=bbc.com" in sent_url
+
+
+def test_custom_base_url_is_the_api_root(
+    mocked_responses: responses.RequestsMock,
+) -> None:
+    """A custom base URL is the API root; endpoint paths add the version."""
+    mocked_responses.get(
+        "https://staging.example.com/api/1/latest",
+        json={"status": "success", "results": []},
+        status=200,
+    )
+    mocked_responses.get(
+        "https://staging.example.com/api/2/news",
+        json={"status": "success", "total_results": 0, "results": []},
+        status=200,
+    )
+    with NewsDataApiClient("k", base_url="https://staging.example.com/api") as c:
+        c.latest_api()
+        c.news()
+    assert len(mocked_responses.calls) == 2
+
+
+# ===========================================================================
+# v2 endpoints
+# ===========================================================================
+
+NEWS_V2_URL = "https://newsdata.io/api/2/news"
+COUNT_NEWS_V2_URL = "https://newsdata.io/api/2/count/news"
+
+
+@pytest.mark.parametrize(
+    ("method_name", "endpoint_path"),
+    [
+        ("news", "news"),
+        ("market", "market"),
+        ("crypto", "crypto"),
+        ("sources", "sources"),
+        ("count_news", "count/news"),
+        ("count_market", "count/market"),
+        ("count_crypto", "count/crypto"),
+    ],
+)
+def test_v2_endpoint_url_resolves(
+    client: NewsDataApiClient,
+    mocked_responses: responses.RequestsMock,
+    method_name: str,
+    endpoint_path: str,
+) -> None:
+    mocked_responses.get(
+        f"https://newsdata.io/api/2/{endpoint_path}",
+        json={"status": "success", "total_results": 0, "results": []},
+        status=200,
+    )
+    getattr(client, method_name)()
+    assert len(mocked_responses.calls) == 1
+
+
+def test_v2_sends_v2_param_names(
+    client: NewsDataApiClient,
+    mocked_responses: responses.RequestsMock,
+) -> None:
+    mocked_responses.get(
+        NEWS_V2_URL,
+        json={"status": "success", "total_results": 0, "results": []},
+        status=200,
+    )
+    client.news(
+        q_in_title="bitcoin",
+        source_url=["bbc.com", "cnn.com"],
+        exclude_country="us",
+        source_priority="top",
+        timeframe=6,
+        content=True,
+        remove_duplicate=False,
+    )
+    sent_url = mocked_responses.calls[0].request.url
+    assert sent_url is not None
+    assert "q_in_title=bitcoin" in sent_url
+    assert "source_url=bbc.com%2Ccnn.com" in sent_url
+    assert "exclude_country=us" in sent_url
+    assert "source_priority=top" in sent_url
+    assert "timeframe=6" in sent_url
+    assert "content=1" in sent_url
+    assert "remove_duplicate=0" in sent_url
+    assert "apikey=test_key_xxx" in sent_url
+
+
+@pytest.mark.parametrize(
+    ("method_name", "endpoint_path"),
+    [
+        ("news", "news"),
+        ("market", "market"),
+        ("crypto", "crypto"),
+        ("count_news", "count/news"),
+        ("count_market", "count/market"),
+        ("count_crypto", "count/crypto"),
+    ],
+)
+def test_v2_exclude_source_url_sent_as_csv(
+    client: NewsDataApiClient,
+    mocked_responses: responses.RequestsMock,
+    method_name: str,
+    endpoint_path: str,
+) -> None:
+    mocked_responses.get(
+        f"https://newsdata.io/api/2/{endpoint_path}",
+        json={"status": "success", "total_results": 0, "results": []},
+        status=200,
+    )
+    getattr(client, method_name)(exclude_source_url=["bbc.com", "cnn.com"])
+    sent_url = mocked_responses.calls[0].request.url
+    assert sent_url is not None
+    assert "exclude_source_url=bbc.com%2Ccnn.com" in sent_url
+
+
+def test_v2_sources_sends_filters(
+    client: NewsDataApiClient,
+    mocked_responses: responses.RequestsMock,
+) -> None:
+    mocked_responses.get(
+        "https://newsdata.io/api/2/sources",
+        json={"status": "success", "total_results": 0, "results": []},
+        status=200,
+    )
+    client.sources(country=["us", "gb"], source_priority="top")
+    sent_url = mocked_responses.calls[0].request.url
+    assert sent_url is not None
+    assert "country=us%2Cgb" in sent_url
+    assert "source_priority=top" in sent_url
+
+
+def test_v2_mutex_validation_applies(client: NewsDataApiClient) -> None:
+    with pytest.raises(NewsdataValidationError) as exc_info:
+        client.news(q="a", q_in_title="b")
+    assert exc_info.value.param == "q"
+
+
+def test_v2_raw_query_accepts_v2_names(
+    client: NewsDataApiClient,
+    mocked_responses: responses.RequestsMock,
+) -> None:
+    mocked_responses.get(
+        NEWS_V2_URL,
+        json={"status": "success", "total_results": 0, "results": []},
+        status=200,
+    )
+    client.news(raw_query="q_in_title=bitcoin&exclude_source_url=bbc.com")
+    sent_url = mocked_responses.calls[0].request.url
+    assert sent_url is not None
+    assert "q_in_title=bitcoin" in sent_url
+    assert "exclude_source_url=bbc.com" in sent_url
+
+
+def test_raw_query_rejects_names_of_the_other_version(
+    client: NewsDataApiClient,
+) -> None:
+    """v2 methods reject v1 parameter names in raw_query, and vice versa."""
+    with pytest.raises(NewsdataValidationError):
+        client.news(raw_query="qInTitle=bitcoin")
+    with pytest.raises(NewsdataValidationError):
+        client.latest_api(raw_query="q_in_title=bitcoin")
+
+
+def test_v2_scroll_merges_pages(
+    client: NewsDataApiClient,
+    mocked_responses: responses.RequestsMock,
+    no_sleep: None,
+) -> None:
+    """v2 scroll follows ``next_page`` and returns the v2 response keys."""
+    mocked_responses.get(
+        NEWS_V2_URL,
+        json={
+            "status": "success",
+            "total_results": 3,
+            "results": [{"id": "1"}, {"id": "2"}],
+            "next_page": "p2",
+        },
+        status=200,
+    )
+    mocked_responses.get(
+        NEWS_V2_URL,
+        json={
+            "status": "success",
+            "total_results": 3,
+            "results": [{"id": "3"}],
+            "next_page": None,
+        },
+        status=200,
+    )
+    result = client.news(q="x", scroll=True)
+    assert isinstance(result, dict)
+    assert result == {
+        "total_results": 3,
+        "results": [{"id": "1"}, {"id": "2"}, {"id": "3"}],
+        "next_page": None,
+    }
+    second_url = mocked_responses.calls[1].request.url
+    assert second_url is not None
+    assert "page=p2" in second_url
+
+
+def test_v2_scroll_truncates_to_max_result(
+    client: NewsDataApiClient,
+    mocked_responses: responses.RequestsMock,
+    no_sleep: None,
+) -> None:
+    mocked_responses.get(
+        NEWS_V2_URL,
+        json={
+            "status": "success",
+            "total_results": 20,
+            "results": [{"id": str(i)} for i in range(5)],
+            "next_page": "p2",
+        },
+        status=200,
+    )
+    mocked_responses.get(
+        NEWS_V2_URL,
+        json={
+            "status": "success",
+            "total_results": 20,
+            "results": [{"id": str(i)} for i in range(5, 10)],
+            "next_page": "p3",
+        },
+        status=200,
+    )
+    result = client.news(q="x", scroll=True, max_result=7)
+    assert isinstance(result, dict)
+    assert len(result["results"]) == 7
+    assert result["next_page"] is None
+
+
+def test_v2_paginate_follows_next_page(
+    client: NewsDataApiClient,
+    mocked_responses: responses.RequestsMock,
+    no_sleep: None,
+) -> None:
+    mocked_responses.get(
+        NEWS_V2_URL,
+        json={
+            "status": "success",
+            "total_results": 2,
+            "results": [{"id": "1"}],
+            "next_page": "p2",
+        },
+        status=200,
+    )
+    mocked_responses.get(
+        NEWS_V2_URL,
+        json={
+            "status": "success",
+            "total_results": 2,
+            "results": [{"id": "2"}],
+            "next_page": None,
+        },
+        status=200,
+    )
+    result = client.news(q="x", paginate=True)
+    pages = list(result)
+    assert len(pages) == 2
+    assert pages[0]["results"] == [{"id": "1"}]
+    assert pages[1]["results"] == [{"id": "2"}]
+    second_url = mocked_responses.calls[1].request.url
+    assert second_url is not None
+    assert "page=p2" in second_url
+
+
+def test_v2_paginate_max_pages_caps(
+    client: NewsDataApiClient,
+    mocked_responses: responses.RequestsMock,
+    no_sleep: None,
+) -> None:
+    # Exactly ``max_pages`` mocks, each claiming another page exists: a
+    # third request would raise ConnectionError (no mock for it).
+    for i in range(2):
+        mocked_responses.get(
+            NEWS_V2_URL,
+            json={
+                "status": "success",
+                "total_results": 9,
+                "results": [{"id": str(i)}],
+                "next_page": f"p{i + 1}",
+            },
+            status=200,
+        )
+    pages = list(client.news(q="x", paginate=True, max_pages=2))
+    assert len(pages) == 2
+
+
+def test_v2_count_scroll_merges_list_pages(
+    client: NewsDataApiClient,
+    mocked_responses: responses.RequestsMock,
+    no_sleep: None,
+) -> None:
+    """v2 counts are a list on every page: merged with no aggregate key."""
+    mocked_responses.get(
+        COUNT_NEWS_V2_URL,
+        json={
+            "status": "success",
+            "total_results": 300,
+            "results": [{"date_time": "2026-01-02T00:00:00Z", "count": 100}],
+            "next_page": "1767225600000000000",
+        },
+        status=200,
+    )
+    mocked_responses.get(
+        COUNT_NEWS_V2_URL,
+        json={
+            "status": "success",
+            "total_results": 300,
+            "results": [{"date_time": "2026-01-01T00:00:00Z", "count": 200}],
+            "next_page": None,
+        },
+        status=200,
+    )
+    result = client.count_news(language="en", scroll=True)
+    assert isinstance(result, dict)
+    assert result == {
+        "total_results": 300,
+        "results": [
+            {"date_time": "2026-01-02T00:00:00Z", "count": 100},
+            {"date_time": "2026-01-01T00:00:00Z", "count": 200},
+        ],
+        "next_page": None,
+    }
+    second_url = mocked_responses.calls[1].request.url
+    assert second_url is not None
+    assert "page=1767225600000000000" in second_url
+
+
+def test_v2_scroll_and_paginate_mutually_exclusive(client: NewsDataApiClient) -> None:
+    with pytest.raises(ValueError):
+        client.news(scroll=True, paginate=True)
+
+
+# ===========================================================================
+# v1 deprecation
+# ===========================================================================
+
+
+@pytest.mark.parametrize(
+    ("method_name", "endpoint_path", "args", "replacement"),
+    [
+        ("latest_api", "latest", (), "news"),
+        ("archive_api", "archive", (), "news"),
+        ("sources_api", "sources", (), "sources"),
+        ("crypto_api", "crypto", (), "crypto"),
+        ("market_api", "market", (), "market"),
+        ("count_api", "count", ("2024-01-01", "2024-01-31"), "count_news"),
+        ("crypto_count_api", "crypto/count", ("2024-01-01", "2024-01-31"), "count_crypto"),
+        ("market_count_api", "market/count", ("2024-01-01", "2024-01-31"), "count_market"),
+    ],
+)
+def test_v1_methods_warn_deprecated(
+    client: NewsDataApiClient,
+    mocked_responses: responses.RequestsMock,
+    method_name: str,
+    endpoint_path: str,
+    args: tuple[str, ...],
+    replacement: str,
+) -> None:
+    """Each v1 method warns once, names its replacement, and still works."""
+    mocked_responses.get(
+        f"https://newsdata.io/api/1/{endpoint_path}",
+        json={"status": "success", "results": []},
+        status=200,
+    )
+    with pytest.warns(
+        DeprecationWarning,
+        match=rf"^{method_name}\(\) is deprecated .* use {replacement}\(\) instead\.$",
+    ) as record:
+        response = getattr(client, method_name)(*args)
+    assert response["status"] == "success"
+    # Exactly one warning, attributed to the calling code (this file).
+    assert [w.filename for w in record if w.category is DeprecationWarning] == [__file__]
+
+
+def test_v2_methods_do_not_warn(
+    client: NewsDataApiClient,
+    mocked_responses: responses.RequestsMock,
+) -> None:
+    mocked_responses.get(
+        NEWS_V2_URL,
+        json={"status": "success", "total_results": 0, "results": []},
+        status=200,
+    )
+    with warnings.catch_warnings(record=True) as record:
+        warnings.simplefilter("always")
+        client.news(q="x")
+    assert not [w for w in record if "is deprecated" in str(w.message)]
 
 
 # ===========================================================================
