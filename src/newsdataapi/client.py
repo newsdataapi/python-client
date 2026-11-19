@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 import os
 import time
-import warnings
 from collections.abc import Iterator, Mapping
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
@@ -361,16 +360,6 @@ def _redact_url(url: str, param: str = "apikey") -> str:
     return urlunparse(parsed._replace(query=urlencode(pairs)))
 
 
-def _warn_deprecated(old: str, new: str) -> None:
-    """Warn that the v1 method ``old`` is deprecated in favor of ``new``."""
-    warnings.warn(
-        f"{old}() is deprecated and will be removed in a future release; "
-        f"use {new}() instead.",
-        DeprecationWarning,
-        stacklevel=3,  # point at the code that called the deprecated method
-    )
-
-
 # ---------------------------------------------------------------------------
 # Client.
 # ---------------------------------------------------------------------------
@@ -384,17 +373,13 @@ class NewsDataApiClient:
         with NewsDataApiClient("YOUR_API_KEY") as client:
             response = client.news(q="bitcoin", country="us")
 
-    The ``*_api`` methods (:meth:`latest_api`, :meth:`archive_api`, ...) are
-    deprecated; use :meth:`news`, :meth:`market`, :meth:`crypto`,
-    :meth:`sources` and the ``count_*`` methods instead.
-
     The client owns a single :class:`requests.Session` for connection
     pooling. Pass ``session=...`` to inject your own (it will not be closed
     by the client). Use the context manager (``with``) form, or call
     :meth:`close` explicitly, to release the session.
 
     All endpoint parameters are keyword-only except for the required
-    ``from_date`` / ``to_date`` on the deprecated ``*count_api`` methods.
+    ``from_date`` / ``to_date`` on the ``*count_api`` methods.
     Most parameters accept either a single string or a ``list[str]``; lists
     are comma-joined before being sent to the API.
     """
@@ -560,15 +545,11 @@ class NewsDataApiClient:
     ) -> dict[str, Any] | Iterator[dict[str, Any]]:
         """Fetch latest news.
 
-        .. deprecated:: 0.4.0
-            Use :meth:`news` instead.
-
         See https://newsdata.io/documentation for parameter descriptions.
 
         Returns a dict by default, the merged dict if ``scroll=True``, or
         an iterator of per-page dicts if ``paginate=True``.
         """
-        _warn_deprecated("latest_api", "news")
         return self._dispatch(
             constants.LATEST_ENDPOINT,
             {
@@ -658,12 +639,8 @@ class NewsDataApiClient:
     ) -> dict[str, Any] | Iterator[dict[str, Any]]:
         """Fetch news from the archive.
 
-        .. deprecated:: 0.4.0
-            Use :meth:`news` instead.
-
         See https://newsdata.io/documentation for parameter descriptions.
         """
-        _warn_deprecated("archive_api", "news")
         return self._dispatch(
             constants.ARCHIVE_ENDPOINT,
             {
@@ -721,13 +698,9 @@ class NewsDataApiClient:
     ) -> dict[str, Any]:
         """List available news sources.
 
-        .. deprecated:: 0.4.0
-            Use :meth:`sources` instead.
-
         Sources is a single-page endpoint; ``scroll`` and ``paginate`` are
         not supported.
         """
-        _warn_deprecated("sources_api", "sources")
         params = _validate_params(
             {
                 "country": country,
@@ -778,12 +751,8 @@ class NewsDataApiClient:
     ) -> dict[str, Any] | Iterator[dict[str, Any]]:
         """Fetch cryptocurrency news.
 
-        .. deprecated:: 0.4.0
-            Use :meth:`crypto` instead.
-
         See https://newsdata.io/documentation for parameter descriptions.
         """
-        _warn_deprecated("crypto_api", "crypto")
         return self._dispatch(
             constants.CRYPTO_ENDPOINT,
             {
@@ -866,12 +835,8 @@ class NewsDataApiClient:
     ) -> dict[str, Any] | Iterator[dict[str, Any]]:
         """Fetch market / financial news.
 
-        .. deprecated:: 0.4.0
-            Use :meth:`market` instead.
-
         See https://newsdata.io/documentation for parameter descriptions.
         """
-        _warn_deprecated("market_api", "market")
         return self._dispatch(
             constants.MARKET_ENDPOINT,
             {
@@ -958,16 +923,12 @@ class NewsDataApiClient:
     ) -> dict[str, Any] | Iterator[dict[str, Any]]:
         """Fetch aggregate counts of news for a date range.
 
-        .. deprecated:: 0.4.0
-            Use :meth:`count_news` instead.
-
         ``from_date`` and ``to_date`` are required. Returns a dict by
         default, the merged dict if ``scroll=True`` (concatenates per-bucket
         rows from every page; the final aggregate dict, if any, is captured
         under the ``aggregate`` key of the merged response), or an iterator
         of per-page dicts if ``paginate=True``.
         """
-        _warn_deprecated("count_api", "count_news")
         return self._dispatch(
             constants.COUNT_ENDPOINT,
             {
@@ -1045,15 +1006,11 @@ class NewsDataApiClient:
     ) -> dict[str, Any] | Iterator[dict[str, Any]]:
         """Fetch aggregate counts of crypto news for a date range.
 
-        .. deprecated:: 0.4.0
-            Use :meth:`count_crypto` instead.
-
         ``from_date`` and ``to_date`` are required. Returns a dict by
         default, the merged dict if ``scroll=True`` (final aggregate dict,
         if any, captured under ``aggregate`` key), or an iterator of
         per-page dicts if ``paginate=True``.
         """
-        _warn_deprecated("crypto_count_api", "count_crypto")
         return self._dispatch(
             constants.CRYPTO_COUNT_ENDPOINT,
             {
@@ -1129,15 +1086,11 @@ class NewsDataApiClient:
     ) -> dict[str, Any] | Iterator[dict[str, Any]]:
         """Fetch aggregate counts of market news for a date range.
 
-        .. deprecated:: 0.4.0
-            Use :meth:`count_market` instead.
-
         ``from_date`` and ``to_date`` are required. Returns a dict by
         default, the merged dict if ``scroll=True`` (final aggregate dict,
         if any, captured under ``aggregate`` key), or an iterator of
         per-page dicts if ``paginate=True``.
         """
-        _warn_deprecated("market_count_api", "count_market")
         return self._dispatch(
             constants.MARKET_COUNT_ENDPOINT,
             {

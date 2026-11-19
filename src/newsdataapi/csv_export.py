@@ -21,8 +21,8 @@ def save_to_csv(
     """Write ``response['results']`` to a CSV file inside ``folder_path``.
 
     Nested fields get one column each, named with dots (``source.name``).
-    In responses from the deprecated ``*_api`` methods, dict and list cell
-    values are stringified instead.
+    In responses from the ``*_api`` methods, dict and list cell values are
+    stringified instead.
 
     Args:
         response: A response dict from the NewsData API. Expected to have a

@@ -16,7 +16,6 @@ It also shows the typed exception hierarchy in :func:`example_error_handling`.
 
 from __future__ import annotations
 
-import datetime
 import os
 from pathlib import Path
 
@@ -43,32 +42,29 @@ def main() -> None:
     # the block exits. You can also call ``client.close()`` yourself.
     with NewsDataApiClient(apikey, folder_path=out_dir) as client:
         # 1. Single request — the most common pattern.
-        response = client.news(q="bitcoin", country="us", language="en")
+        response = client.latest_api(q="bitcoin", country="us", language="en")
         results = response["results"]
         print(
-            f"news: {len(results)} articles, "
-            f"total available: {response.get('total_results')}"
+            f"latest: {len(results)} articles, "
+            f"total available: {response.get('totalResults')}"
         )
 
         # 2. Pagination — yields one response per page, capped at max_pages.
         for page_index, page in enumerate(
-            client.crypto(q="ethereum", paginate=True, max_pages=3),
+            client.crypto_api(q="ethereum", paginate=True, max_pages=3),
             start=1,
         ):
             print(f"  crypto page {page_index}: {len(page['results'])} articles")
 
-        # 3. Scroll — auto-follows next_page cursors and merges into one dict.
-        # ``from_date`` / ``to_date`` select historical news.
-        now = datetime.datetime.now(tz=datetime.timezone.utc)
-        date_format = "%Y-%m-%d 00:00:00"
-        merged = client.news(
+        # 3. Scroll — auto-follows nextPage cursors and merges into one dict.
+        merged = client.archive_api(
             q="apple",
-            from_date=(now - datetime.timedelta(days=7)).strftime(date_format),
-            to_date=(now - datetime.timedelta(days=1)).strftime(date_format),
+            from_date="2024-01-01 00:00:00",
+            to_date="2024-01-31 00:00:00",
             scroll=True,
             max_result=50,
         )
-        print(f"scrolled news: {len(merged['results'])} articles")
+        print(f"scrolled archive: {len(merged['results'])} articles")
 
         # 4. Persist results to CSV. ``folder_path`` was set on the client, so
         # we don't pass it again here.
@@ -85,7 +81,7 @@ def example_error_handling(apikey: str) -> None:
     """
     with NewsDataApiClient(apikey) as client:
         try:
-            client.news(q="news")
+            client.latest_api(q="news")
         except NewsdataAuthError as e:
             print(f"API key rejected (HTTP {e.status_code})")
         except NewsdataRateLimitError as e:
