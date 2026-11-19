@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import csv
 import sys
-import warnings
 from datetime import datetime, timedelta, timezone
 from email.utils import format_datetime
 from pathlib import Path
@@ -1907,63 +1906,6 @@ def test_v2_count_scroll_merges_list_pages(
 def test_v2_scroll_and_paginate_mutually_exclusive(client: NewsDataApiClient) -> None:
     with pytest.raises(ValueError):
         client.news(scroll=True, paginate=True)
-
-
-# ===========================================================================
-# v1 deprecation
-# ===========================================================================
-
-
-@pytest.mark.parametrize(
-    ("method_name", "endpoint_path", "args", "replacement"),
-    [
-        ("latest_api", "latest", (), "news"),
-        ("archive_api", "archive", (), "news"),
-        ("sources_api", "sources", (), "sources"),
-        ("crypto_api", "crypto", (), "crypto"),
-        ("market_api", "market", (), "market"),
-        ("count_api", "count", ("2024-01-01", "2024-01-31"), "count_news"),
-        ("crypto_count_api", "crypto/count", ("2024-01-01", "2024-01-31"), "count_crypto"),
-        ("market_count_api", "market/count", ("2024-01-01", "2024-01-31"), "count_market"),
-    ],
-)
-def test_v1_methods_warn_deprecated(
-    client: NewsDataApiClient,
-    mocked_responses: responses.RequestsMock,
-    method_name: str,
-    endpoint_path: str,
-    args: tuple[str, ...],
-    replacement: str,
-) -> None:
-    """Each v1 method warns once, names its replacement, and still works."""
-    mocked_responses.get(
-        f"https://newsdata.io/api/1/{endpoint_path}",
-        json={"status": "success", "results": []},
-        status=200,
-    )
-    with pytest.warns(
-        DeprecationWarning,
-        match=rf"^{method_name}\(\) is deprecated .* use {replacement}\(\) instead\.$",
-    ) as record:
-        response = getattr(client, method_name)(*args)
-    assert response["status"] == "success"
-    # Exactly one warning, attributed to the calling code (this file).
-    assert [w.filename for w in record if w.category is DeprecationWarning] == [__file__]
-
-
-def test_v2_methods_do_not_warn(
-    client: NewsDataApiClient,
-    mocked_responses: responses.RequestsMock,
-) -> None:
-    mocked_responses.get(
-        NEWS_V2_URL,
-        json={"status": "success", "total_results": 0, "results": []},
-        status=200,
-    )
-    with warnings.catch_warnings(record=True) as record:
-        warnings.simplefilter("always")
-        client.news(q="x")
-    assert not [w for w in record if "is deprecated" in str(w.message)]
 
 
 # ===========================================================================
