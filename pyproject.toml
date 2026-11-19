@@ -91,6 +91,11 @@ addopts = [
     "--strict-markers",
     "-m", "not integration",
 ]
+# The v1 methods are deprecated but most of the suite still exercises them;
+# keep their warning out of the test summary.
+filterwarnings = [
+    "ignore:.*is deprecated and will be removed in a future release:DeprecationWarning",
+]
 
 [tool.ruff]
 line-length = 100

@@ -291,6 +291,7 @@ class NewsDataApiWebSocket:
             "ping_timeout": self._ping_timeout,
             "additional_headers": self._additional_headers,
             "proxy": self._proxy,
+            "max_size": None,  # responses can exceed websockets' 1 MiB default
         }
 
     def _next_delay(self, delay: float) -> float:

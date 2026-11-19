@@ -2,22 +2,31 @@
 
 from __future__ import annotations
 
-# Base URL for the NewsData.io REST API. Must end with a slash so that
-# ``urljoin(BASE_URL, "latest")`` produces the right URL.
-BASE_URL = "https://newsdata.io/api/1/"
+# Root URL of the NewsData.io REST API. Endpoint paths carry the API version
+# and are joined to it (the client adds the trailing slash ``urljoin`` needs).
+BASE_URL = "https://newsdata.io/api"
 
-# Endpoint paths joined to ``BASE_URL`` to form the full request URL.
-LATEST_ENDPOINT = "latest"
-ARCHIVE_ENDPOINT = "archive"
-SOURCES_ENDPOINT = "sources"
-CRYPTO_ENDPOINT = "crypto"
-MARKET_ENDPOINT = "market"
-COUNT_ENDPOINT = "count"
-CRYPTO_COUNT_ENDPOINT = "crypto/count"
-MARKET_COUNT_ENDPOINT = "market/count"
-WEBSOCKET_REGISTER_ENDPOINT = "websocket/register"
-WEBSOCKET_FETCH_ENDPOINT = "websocket/fetch"
-WEBSOCKET_DELETE_ENDPOINT = "websocket/delete"
+# v1 endpoint paths, joined to ``BASE_URL`` to form the full request URL.
+LATEST_ENDPOINT = "1/latest"
+ARCHIVE_ENDPOINT = "1/archive"
+SOURCES_ENDPOINT = "1/sources"
+CRYPTO_ENDPOINT = "1/crypto"
+MARKET_ENDPOINT = "1/market"
+COUNT_ENDPOINT = "1/count"
+CRYPTO_COUNT_ENDPOINT = "1/crypto/count"
+MARKET_COUNT_ENDPOINT = "1/market/count"
+WEBSOCKET_REGISTER_ENDPOINT = "1/websocket/register"
+WEBSOCKET_FETCH_ENDPOINT = "1/websocket/fetch"
+WEBSOCKET_DELETE_ENDPOINT = "1/websocket/delete"
+
+# v2 endpoint paths.
+NEWS_V2_ENDPOINT = "2/news"
+MARKET_V2_ENDPOINT = "2/market"
+CRYPTO_V2_ENDPOINT = "2/crypto"
+SOURCES_V2_ENDPOINT = "2/sources"
+COUNT_NEWS_V2_ENDPOINT = "2/count/news"
+COUNT_MARKET_V2_ENDPOINT = "2/count/market"
+COUNT_CRYPTO_V2_ENDPOINT = "2/count/crypto"
 
 # HTTP defaults.
 DEFAULT_REQUEST_TIMEOUT = 30          # seconds

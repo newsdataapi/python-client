@@ -52,7 +52,9 @@ class NewsdataAuthError(NewsdataAPIError):
 
 
 class NewsdataRateLimitError(NewsdataAPIError):
-    """Raised on 429 responses when retries are exhausted.
+    """Raised on 429 responses when retries are exhausted, or at once when
+    the ``Retry-After`` wait is longer than the client's
+    ``retry_backoff_max``.
 
     Attributes:
         retry_after: Seconds to wait before retrying, parsed from the
@@ -85,9 +87,9 @@ class NewsdataApiLimitExceededError(NewsdataRateLimitError):
 
 
 class NewsdataApiKeyLimitExceededError(NewsdataRateLimitError):
-    """Raised on 429 when this specific API key's own credit cap
-    (``max_credit_limit``) is exhausted, even though the account's overall
-    pool may still have credits left. Never retried.
+    """Raised on 429 when this specific API key's own credit cap is
+    exhausted, even though the account's overall pool may still have
+    credits left. Never retried.
     """
 
 

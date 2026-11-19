@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import json
 import os
 import time
 from collections.abc import Iterable, Mapping
@@ -18,6 +19,10 @@ def save_to_csv(
     overwrite: bool = False,
 ) -> Path:
     """Write ``response['results']`` to a CSV file inside ``folder_path``.
+
+    Nested fields get one column each, named with dots (``source.name``).
+    In responses from the deprecated ``*_api`` methods, dict and list cell
+    values are stringified instead.
 
     Args:
         response: A response dict from the NewsData API. Expected to have a
@@ -57,7 +62,13 @@ def save_to_csv(
             f"Expected response['results'] to be a list, got {type(results).__name__}"
         )
 
-    rows = [_flatten_row(row) for row in results if isinstance(row, Mapping)]
+    # A v2 response is recognised by its ``total_results`` key.
+    is_v2 = "total_results" in response
+    rows = [
+        _flatten_row_v2(row) if is_v2 else _flatten_row(row)
+        for row in results
+        if isinstance(row, Mapping)
+    ]
     fieldnames = _collect_fieldnames(rows)
 
     with target.open("w", newline="", encoding="utf-8") as fh:
@@ -86,6 +97,29 @@ def _flatten_row(row: Mapping[str, Any]) -> dict[str, Any]:
             flattened[key] = ",".join(str(item) for item in value)
         else:
             flattened[key] = value
+    return flattened
+
+
+def _flatten_row_v2(row: Mapping[str, Any], prefix: str = "") -> dict[str, Any]:
+    """Return a flat *copy* of a v2 ``row``.
+
+    Nested dicts become dotted columns (``source.name``), at any depth.
+    Lists of plain values are joined with ``,``; lists holding dicts or
+    lists are written as JSON. Other types are passed through unchanged.
+    """
+    flattened: dict[str, Any] = {}
+    for key, value in row.items():
+        column = f"{prefix}{key}"
+        if isinstance(value, Mapping):
+            flattened.update(_flatten_row_v2(value, f"{column}."))
+        elif isinstance(value, list):
+            if any(isinstance(item, (Mapping, list)) for item in value):
+                # default=str: a non-JSON value is written as text, not raised.
+                flattened[column] = json.dumps(value, ensure_ascii=False, default=str)
+            else:
+                flattened[column] = ",".join(str(item) for item in value)
+        else:
+            flattened[column] = value
     return flattened
 
 

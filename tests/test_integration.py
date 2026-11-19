@@ -103,3 +103,48 @@ def test_market_count_api(api: NewsDataApiClient) -> None:
     )
     assert isinstance(response, dict)
     assert response["status"] == "success"
+
+
+# ---- v2 endpoints ----------------------------------------------------------
+
+
+def test_news(api: NewsDataApiClient) -> None:
+    response = api.news()
+    assert isinstance(response, dict)
+    assert response["status"] == "success"
+
+
+def test_market(api: NewsDataApiClient) -> None:
+    response = api.market()
+    assert isinstance(response, dict)
+    assert response["status"] == "success"
+
+
+def test_crypto(api: NewsDataApiClient) -> None:
+    response = api.crypto(q="bitcoin")
+    assert isinstance(response, dict)
+    assert response["status"] == "success"
+
+
+def test_sources(api: NewsDataApiClient) -> None:
+    response = api.sources()
+    assert isinstance(response, dict)
+    assert response["status"] == "success"
+
+
+def test_count_news(api: NewsDataApiClient) -> None:
+    response = api.count_news(language="en")
+    assert isinstance(response, dict)
+    assert response["status"] == "success"
+
+
+def test_count_market(api: NewsDataApiClient) -> None:
+    response = api.count_market(language="en")
+    assert isinstance(response, dict)
+    assert response["status"] == "success"
+
+
+def test_count_crypto(api: NewsDataApiClient) -> None:
+    response = api.count_crypto(language="en")
+    assert isinstance(response, dict)
+    assert response["status"] == "success"
