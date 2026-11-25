@@ -15,9 +15,6 @@ MARKET_ENDPOINT = "1/market"
 COUNT_ENDPOINT = "1/count"
 CRYPTO_COUNT_ENDPOINT = "1/crypto/count"
 MARKET_COUNT_ENDPOINT = "1/market/count"
-WEBSOCKET_REGISTER_ENDPOINT = "1/websocket/register"
-WEBSOCKET_FETCH_ENDPOINT = "1/websocket/fetch"
-WEBSOCKET_DELETE_ENDPOINT = "1/websocket/delete"
 
 # v2 endpoint paths.
 NEWS_V2_ENDPOINT = "2/news"
@@ -27,6 +24,9 @@ SOURCES_V2_ENDPOINT = "2/sources"
 COUNT_NEWS_V2_ENDPOINT = "2/count/news"
 COUNT_MARKET_V2_ENDPOINT = "2/count/market"
 COUNT_CRYPTO_V2_ENDPOINT = "2/count/crypto"
+WEBSOCKET_REGISTER_ENDPOINT = "2/websocket/register"
+WEBSOCKET_FETCH_ENDPOINT = "2/websocket/fetch"
+WEBSOCKET_DELETE_ENDPOINT = "2/websocket/delete"
 
 # HTTP defaults.
 DEFAULT_REQUEST_TIMEOUT = 30          # seconds
@@ -37,7 +37,7 @@ PAGINATION_DELAY = 1.0                # seconds slept between pages
 
 # Real-time WebSocket defaults (newsdataapi.NewsDataApiWebSocket).
 WS_BASE_URL = "wss://ws.newsdata.io/ws/event"
-WS_NEWS_TYPE = "latest"         # feed a registered query matches against
+WS_NEWS_TYPE = "news"           # feed a registered query matches against (only news so far)
 WS_POLICY_VIOLATION = 1008      # close code for a permanent connection rejection
 WS_RECONNECT_DELAY = 1.0        # seconds before the first reconnect; doubles each retry
 WS_RECONNECT_DELAY_MAX = 30.0   # cap on the reconnect delay

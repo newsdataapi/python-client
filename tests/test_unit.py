@@ -1064,6 +1064,7 @@ def test_429_retry_after_above_backoff_max_raises_without_retry(
     [
         ("ApiLimitExceeded", NewsdataApiLimitExceededError),
         ("ApiKeyLimitExceeded", NewsdataApiKeyLimitExceededError),
+        ("RegistrationLimitExceeded", NewsdataRateLimitError),
     ],
 )
 def test_429_quota_exhausted_raises_without_retry(
@@ -1073,8 +1074,9 @@ def test_429_quota_exhausted_raises_without_retry(
     mocked_responses: responses.RequestsMock,
     no_sleep: None,
 ) -> None:
-    """A 429 whose error code means exhausted credits is never retried,
-    and raises the specific subclass for that code."""
+    """A 429 whose error code waiting cannot fix (exhausted credits, every
+    real-time registration in use) is never retried, and raises the
+    exception class for that code."""
     body = {"status": "error", "results": {"message": "limit", "code": code}}
     mocked_responses.get(LATEST_URL, json=body, status=429)
     with pytest.raises(expected_exc) as exc_info:
@@ -1912,9 +1914,9 @@ def test_v2_scroll_and_paginate_mutually_exclusive(client: NewsDataApiClient) ->
 # WebSocket query management (register / fetch / delete)
 # ===========================================================================
 
-WS_REGISTER_URL = "https://newsdata.io/api/1/websocket/register"
-WS_FETCH_URL = "https://newsdata.io/api/1/websocket/fetch"
-WS_DELETE_URL = "https://newsdata.io/api/1/websocket/delete"
+WS_REGISTER_URL = "https://newsdata.io/api/2/websocket/register"
+WS_FETCH_URL = "https://newsdata.io/api/2/websocket/fetch"
+WS_DELETE_URL = "https://newsdata.io/api/2/websocket/delete"
 
 # NewsDataApiWebSocket can't be constructed below Python 3.10.
 requires_websocket = pytest.mark.skipif(
@@ -1960,7 +1962,7 @@ def test_websocket_register_posts_query_params(
 
 
 @requires_websocket
-def test_websocket_register_always_sends_news_type_latest(
+def test_websocket_register_always_sends_news_type_news(
     client: NewsDataApiClient,
     mocked_responses: responses.RequestsMock,
 ) -> None:
@@ -1972,7 +1974,7 @@ def test_websocket_register_always_sends_news_type_latest(
     NewsDataApiWebSocket(client).websocket_register(q="nvidia")
     sent_url = mocked_responses.calls[0].request.url
     assert sent_url is not None
-    assert "news_type=latest" in sent_url
+    assert "news_type=news" in sent_url
 
 
 @requires_websocket
@@ -1981,7 +1983,7 @@ def test_websocket_register_mutex_validation_applies(
 ) -> None:
     """The shared mutex groups guard register too — no request is sent."""
     with pytest.raises(NewsdataValidationError):
-        NewsDataApiWebSocket(client).websocket_register(q="a", qInTitle="b")
+        NewsDataApiWebSocket(client).websocket_register(q="a", q_in_title="b")
 
 
 @requires_websocket
@@ -1998,7 +2000,7 @@ def test_websocket_register_raw_query(
     sent_url = mocked_responses.calls[0].request.url
     assert sent_url is not None
     assert "q=pizza" in sent_url
-    assert "news_type=latest" in sent_url
+    assert "news_type=news" in sent_url
 
 
 @requires_websocket
@@ -2011,7 +2013,16 @@ def test_websocket_register_raw_query_rejects_unknown_param(
 
 
 @requires_websocket
-def test_websocket_register_sends_excludedomainurl(
+def test_websocket_register_raw_query_rejects_v1_name(
+    client: NewsDataApiClient,
+) -> None:
+    """Register takes the v2 parameter names only — no request is sent."""
+    with pytest.raises(NewsdataValidationError):
+        NewsDataApiWebSocket(client).websocket_register(raw_query="qInTitle=pizza")
+
+
+@requires_websocket
+def test_websocket_register_sends_exclude_source_url(
     client: NewsDataApiClient,
     mocked_responses: responses.RequestsMock,
 ) -> None:
@@ -2021,11 +2032,11 @@ def test_websocket_register_sends_excludedomainurl(
         status=200,
     )
     NewsDataApiWebSocket(client).websocket_register(
-        q="pizza", excludedomainurl=["bbc.com", "cnn.com"]
+        q="pizza", exclude_source_url=["bbc.com", "cnn.com"]
     )
     sent_url = mocked_responses.calls[0].request.url
     assert sent_url is not None
-    assert "excludedomainurl=bbc.com%2Ccnn.com" in sent_url
+    assert "exclude_source_url=bbc.com%2Ccnn.com" in sent_url
 
 
 @requires_websocket
@@ -2089,23 +2100,22 @@ def test_websocket_fetch_returns_queries(
         WS_FETCH_URL,
         json={
             "status": "success",
-            "totalQueries": 1,
-            "results": {
-                "queries": [
-                    {
-                        "registration_id": "abc123",
-                        "active_clients": 2,
-                        "news_type": "latest",
-                        "query": {"q": "pizza"},
-                    }
-                ]
-            },
+            "total_results": 1,
+            "results": [
+                {
+                    "registration_id": "abc123",
+                    "active_clients": 2,
+                    "last_used": "2026-11-20T10:15:00Z",
+                    "news_type": "news",
+                    "query": {"q": "pizza"},
+                }
+            ],
         },
         status=200,
     )
     response = NewsDataApiWebSocket(client).websocket_fetch()
-    assert response["totalQueries"] == 1
-    assert response["results"]["queries"][0]["registration_id"] == "abc123"
+    assert response["total_results"] == 1
+    assert response["results"][0]["registration_id"] == "abc123"
     sent_url = mocked_responses.calls[0].request.url
     assert sent_url is not None
     assert "apikey=test_key_xxx" in sent_url

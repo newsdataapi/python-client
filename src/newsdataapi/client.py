@@ -116,6 +116,8 @@ _MUTEX_GROUPS: tuple[tuple[str, ...], ...] = (
 _QUOTA_EXHAUSTED_ERRORS: dict[str, type[NewsdataRateLimitError]] = {
     "ApiLimitExceeded": NewsdataApiLimitExceededError,
     "ApiKeyLimitExceeded": NewsdataApiKeyLimitExceededError,
+    # every real-time registration the plan allows is in use: only deleting one frees a slot
+    "RegistrationLimitExceeded": NewsdataRateLimitError,
 }
 
 

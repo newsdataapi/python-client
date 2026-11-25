@@ -67,7 +67,7 @@ def sync_example() -> None:
     with NewsDataApiWebSocket(client) as ws:
         for response in ws.stream(registration_id):
             for article in response["results"]:
-                print(article.get("title"), "-", article.get("link"))
+                print(article.get("title"), "-", article.get("url"))
 
 
 async def async_example() -> None:
@@ -77,7 +77,7 @@ async def async_example() -> None:
     async with NewsDataApiWebSocket(client) as ws:
         async for response in ws.stream_async(registration_id):
             for article in response["results"]:
-                print(article.get("title"), "-", article.get("link"))
+                print(article.get("title"), "-", article.get("url"))
 
 
 def main() -> None:

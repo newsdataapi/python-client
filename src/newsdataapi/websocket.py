@@ -190,24 +190,22 @@ class NewsDataApiWebSocket:
         self,
         *,
         q: str | None = None,
-        qInTitle: str | None = None,
-        qInMeta: str | None = None,
+        q_in_title: str | None = None,
+        q_in_meta: str | None = None,
         country: str | list[str] | None = None,
-        excludecountry: str | list[str] | None = None,
+        exclude_country: str | list[str] | None = None,
         category: str | list[str] | None = None,
-        excludecategory: str | list[str] | None = None,
+        exclude_category: str | list[str] | None = None,
         language: str | list[str] | None = None,
-        excludelanguage: str | list[str] | None = None,
-        domain: str | list[str] | None = None,
-        domainurl: str | list[str] | None = None,
-        excludedomain: str | list[str] | None = None,
-        excludedomainurl: str | list[str] | None = None,
-        prioritydomain: str | None = None,
+        exclude_language: str | list[str] | None = None,
+        source_url: str | list[str] | None = None,
+        exclude_source_url: str | list[str] | None = None,
+        source_priority: str | None = None,
         timezone: str | None = None,
-        full_content: bool | None = None,
+        content: bool | None = None,
         image: bool | None = None,
         video: bool | None = None,
-        removeduplicate: bool | None = None,
+        remove_duplicate: bool | None = None,
         tag: str | list[str] | None = None,
         sentiment: str | None = None,
         sentiment_score: float | None = None,
@@ -215,7 +213,7 @@ class NewsDataApiWebSocket:
         organization: str | list[str] | None = None,
         creator: str | list[str] | None = None,
         datatype: str | list[str] | None = None,
-        excludefield: str | list[str] | None = None,
+        exclude_field: str | list[str] | None = None,
         raw_query: str | None = None,
     ) -> dict[str, Any]:
         """Register a real-time WebSocket query.
@@ -226,24 +224,22 @@ class NewsDataApiWebSocket:
         params = _validate_params(
             {
                 "q": q,
-                "qInTitle": qInTitle,
-                "qInMeta": qInMeta,
+                "q_in_title": q_in_title,
+                "q_in_meta": q_in_meta,
                 "country": country,
-                "excludecountry": excludecountry,
+                "exclude_country": exclude_country,
                 "category": category,
-                "excludecategory": excludecategory,
+                "exclude_category": exclude_category,
                 "language": language,
-                "excludelanguage": excludelanguage,
-                "domain": domain,
-                "domainurl": domainurl,
-                "excludedomain": excludedomain,
-                "excludedomainurl": excludedomainurl,
-                "prioritydomain": prioritydomain,
+                "exclude_language": exclude_language,
+                "source_url": source_url,
+                "exclude_source_url": exclude_source_url,
+                "source_priority": source_priority,
                 "timezone": timezone,
-                "full_content": full_content,
+                "content": content,
                 "image": image,
                 "video": video,
-                "removeduplicate": removeduplicate,
+                "remove_duplicate": remove_duplicate,
                 "tag": tag,
                 "sentiment": sentiment,
                 "sentiment_score": sentiment_score,
@@ -251,7 +247,7 @@ class NewsDataApiWebSocket:
                 "organization": organization,
                 "creator": creator,
                 "datatype": datatype,
-                "excludefield": excludefield,
+                "exclude_field": exclude_field,
                 "raw_query": raw_query,
             }
         )
@@ -263,7 +259,7 @@ class NewsDataApiWebSocket:
     def websocket_fetch(self) -> dict[str, Any]:
         """List the registered WebSocket queries.
 
-        ``response["results"]["queries"]`` holds one entry per query.
+        ``response["results"]`` holds one entry per query.
         """
         return self.api_client._request(constants.WEBSOCKET_FETCH_ENDPOINT, {})
 
@@ -299,7 +295,7 @@ class NewsDataApiWebSocket:
 
     def stream(self, registration_id: str) -> Iterator[dict[str, Any]]:
         """Connect and yield each response for ``registration_id`` as it
-        arrives. Responses have the familiar ``status`` / ``totalResults`` /
+        arrives. Responses have the ``status`` / ``total_results`` /
         ``results`` shape."""
         _check_registration_id(registration_id)
         url = self._url(registration_id)

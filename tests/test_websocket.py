@@ -33,7 +33,7 @@ def _news(*titles: str) -> str:
     return json.dumps(
         {
             "status": "success",
-            "totalResults": len(titles),
+            "total_results": len(titles),
             "results": [{"title": t} for t in titles],
         }
     )
@@ -198,7 +198,7 @@ def test_yields_whole_server_responses(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(CONNECT, _FakeConnect(([_news("A", "B"), _news("C")], None)))
     got = list(_ws(reconnect=False).stream("r"))
     assert [r["status"] for r in got] == ["success", "success"]
-    assert [r["totalResults"] for r in got] == [2, 1]
+    assert [r["total_results"] for r in got] == [2, 1]
     assert [[a["title"] for a in r["results"]] for r in got] == [["A", "B"], ["C"]]
 
 
@@ -206,7 +206,7 @@ def test_malformed_frames_are_skipped(monkeypatch: pytest.MonkeyPatch) -> None:
     frames = ["not json", json.dumps(["not", "a", "dict"]), _news("A")]
     monkeypatch.setattr(CONNECT, _FakeConnect((frames, None)))
     got = list(_ws(reconnect=False).stream("r"))
-    assert [r["totalResults"] for r in got] == [1]
+    assert [r["total_results"] for r in got] == [1]
 
 
 @pytest.mark.parametrize("bad_id", ["", None, 123])
@@ -533,7 +533,7 @@ def test_async_yields_whole_server_responses(monkeypatch: pytest.MonkeyPatch) ->
         return [r async for r in _ws(reconnect=False).stream_async("r")]
 
     got = asyncio.run(go())
-    assert [r["totalResults"] for r in got] == [2, 1]
+    assert [r["total_results"] for r in got] == [2, 1]
     assert [[a["title"] for a in r["results"]] for r in got] == [["A", "B"], ["C"]]
 
 
