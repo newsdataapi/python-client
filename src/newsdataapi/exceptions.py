@@ -54,7 +54,8 @@ class NewsdataAuthError(NewsdataAPIError):
 class NewsdataRateLimitError(NewsdataAPIError):
     """Raised on 429 responses when retries are exhausted, or at once when
     the ``Retry-After`` wait is longer than the client's
-    ``retry_backoff_max``.
+    ``retry_backoff_max`` or the error code is ``RegistrationLimitExceeded``
+    (every real-time registration the plan allows is in use).
 
     Attributes:
         retry_after: Seconds to wait before retrying, parsed from the
