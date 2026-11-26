@@ -17,7 +17,7 @@ from .exceptions import (
 )
 from .websocket import NewsDataApiWebSocket
 
-__version__ = "0.4.2"
+__version__ = "0.4.3"
 
 __all__ = [
     "NewsDataApiClient",

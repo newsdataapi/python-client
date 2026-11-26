@@ -12,7 +12,12 @@ import json
 
 import pytest
 from websockets.datastructures import Headers
-from websockets.exceptions import ConnectionClosedError, InvalidMessage, InvalidStatus
+from websockets.exceptions import (
+    ConnectionClosedError,
+    InvalidMessage,
+    InvalidStatus,
+    InvalidURI,
+)
 from websockets.frames import Close
 from websockets.http11 import Response
 
@@ -50,6 +55,17 @@ def _closed(code: int, reason: str = "") -> ConnectionClosedError:
 
 def _invalid_status(status: int) -> InvalidStatus:
     return InvalidStatus(Response(status, "x", Headers(), b""))
+
+
+def _invalid_uri_connect(urls: list[str]):
+    """A ``connect`` that rejects the URL like websockets does (``InvalidURI``
+    carries the full URL, API key included), recording each attempt."""
+
+    def connect(url: str, **_kwargs: object) -> None:
+        urls.append(url)
+        raise InvalidURI(url, "scheme isn't ws or wss")
+
+    return connect
 
 
 # Terminals the fakes raise from connect() itself (handshake / network
@@ -148,6 +164,30 @@ def test_custom_base_url(monkeypatch: pytest.MonkeyPatch) -> None:
     ws = _ws("KEY", base_url="wss://staging.example/ws", reconnect=False)
     list(ws.stream("REG"))
     assert fake.urls[0] == "wss://staging.example/ws?apikey=KEY&registration_id=REG"
+
+
+def test_url_encodes_registration_id(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = _FakeConnect(([_news("A")], None))
+    monkeypatch.setattr(CONNECT, fake)
+    list(_ws("KEY", reconnect=False).stream("a#b&c d"))
+    assert fake.urls[0] == (
+        "wss://ws.newsdata.io/ws/event?apikey=KEY&registration_id=a%23b%26c%20d"
+    )
+
+
+def test_invalid_uri_raises_without_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    urls: list[str] = []
+    monkeypatch.setattr(CONNECT, _invalid_uri_connect(urls))
+    ws = _ws("SECRETKEY", base_url="https://staging.example/ws")  # reconnect on
+    with pytest.raises(NewsdataWebSocketError) as info:
+        list(ws.stream("REG"))
+    assert type(info.value) is NewsdataWebSocketError
+    assert len(urls) == 1  # never retried
+    assert "SECRETKEY" in urls[0]  # the rejected URL did carry the key...
+    assert "SECRETKEY" not in str(info.value)  # ...but the raised error does not
+    assert "https://staging.example/ws" in str(info.value)
+    assert info.value.__cause__ is None
+    assert info.value.__suppress_context__
 
 
 def test_connect_params_passed_through(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -623,6 +663,21 @@ def test_async_reconnects_on_transient_close(monkeypatch: pytest.MonkeyPatch) ->
         _acollect(_ws(), got)
     assert got == ["A", "B"]
     assert fake.calls == 2
+
+
+def test_async_invalid_uri_raises_without_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    urls: list[str] = []
+    monkeypatch.setattr(CONNECT_ASYNC, _invalid_uri_connect(urls))
+    ws = _ws("SECRETKEY", base_url="https://staging.example/ws")  # reconnect on
+    with pytest.raises(NewsdataWebSocketError) as info:
+        _atitles(ws, "REG")
+    assert type(info.value) is NewsdataWebSocketError
+    assert len(urls) == 1  # never retried
+    assert "SECRETKEY" in urls[0]
+    assert "SECRETKEY" not in str(info.value)
+    assert "https://staging.example/ws" in str(info.value)
+    assert info.value.__cause__ is None
+    assert info.value.__suppress_context__
 
 
 def test_async_reconnects_on_network_error(monkeypatch: pytest.MonkeyPatch) -> None:

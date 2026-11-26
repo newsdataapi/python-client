@@ -15,6 +15,7 @@ import sys
 import time
 from collections.abc import AsyncIterator, Iterator
 from typing import Any
+from urllib.parse import quote, urlencode
 
 from . import constants
 from .client import NewsDataApiClient, _redact_url, _validate_params
@@ -30,7 +31,12 @@ _WEBSOCKET_SUPPORTED = sys.version_info >= (3, 10)
 
 if _WEBSOCKET_SUPPORTED:
     from websockets.asyncio import client as _asyncio_client
-    from websockets.exceptions import ConnectionClosedError, InvalidMessage, InvalidStatus
+    from websockets.exceptions import (
+        ConnectionClosedError,
+        InvalidMessage,
+        InvalidStatus,
+        InvalidURI,
+    )
     from websockets.sync import client as _sync_client
 
 logger = logging.getLogger(__name__)
@@ -275,10 +281,11 @@ class NewsDataApiWebSocket:
     # ---- streaming --------------------------------------------------------
 
     def _url(self, registration_id: str) -> str:
-        return (
-            f"{self._base_url}?apikey={self.api_client._apikey}"
-            f"&registration_id={registration_id}"
+        query = urlencode(
+            {"apikey": self.api_client._apikey, "registration_id": registration_id},
+            quote_via=quote,
         )
+        return f"{self._base_url}?{query}"
 
     def _connect_kwargs(self) -> dict[str, Any]:
         return {
@@ -321,6 +328,11 @@ class NewsDataApiWebSocket:
                             error_response, delay = response, refused_delay
                             continue
                         yield response
+            except InvalidURI as exc:
+                # never retried; str(exc) holds the full URL, API key included
+                raise NewsdataWebSocketError(
+                    f"invalid WebSocket URL {self._base_url!r}: {exc.msg}"
+                ) from None
             except (
                 InvalidStatus,
                 InvalidMessage,  # connection lost during the handshake
@@ -372,6 +384,11 @@ class NewsDataApiWebSocket:
                             error_response, delay = response, refused_delay
                             continue
                         yield response
+            except InvalidURI as exc:
+                # never retried; str(exc) holds the full URL, API key included
+                raise NewsdataWebSocketError(
+                    f"invalid WebSocket URL {self._base_url!r}: {exc.msg}"
+                ) from None
             except (
                 InvalidStatus,
                 InvalidMessage,  # connection lost during the handshake
